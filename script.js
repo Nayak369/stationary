@@ -1,0 +1,1622 @@
+// ✅ YOUR API KEY — EMBEDDED AS REQUESTED
+const API_KEY = 'AIzaSyC7D_n5PQ41TmyAtf3KAt1fKk3-CBYACHU';
+// ✅ CORRECT MODEL & ENDPOINT (v1 + gemini-1.5-flash)
+const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(API_KEY)}`;
+
+const ROUNDING_TOLERANCE = 1.00;
+
+const ALLOWED_ITEMS = [
+  "Pens","Pencils","Notebooks","Registers","Files","Folders","Document Holders",
+  "Staplers","Pins","Clips","Rubber","Erasers","Sharpeners","Markers","Highlighters",
+  "Whiteboard Markers","Paper","A4","A3","Card Sheets","Ink","Toner Cartridges",
+  "Tape","Glue","Adhesives","Correction Fluid","Correction Tape","Stamp Pads",
+  "Signature Pads","Calculator","Tea Cups","Coffee Cups","Water Bottles","Jugs",
+  "Flasks","Plates","Business Cards","Letterheads","Posters","Banners","Hoardings",
+  "Invitations","Greeting Cards","Calendars","ID Cards","Certificates",
+  "Corporate Gifts Printing","Certificates of Appreciation","Brochures","Flyers",
+  "P.out", "P.out service", "P.out charges", "P.out fee", // Added multiple variations of P.out service
+  "Printing Services", "Printout", "Xerox", "Photocopy", "Binding", "Lamination"
+].map(s => s.toLowerCase());
+
+const PROMPT = `
+You are an expert bill validator and data extractor. Analyze this image and determine if it's a valid bill/receipt. If it is, extract ALL the details. If it's not a bill, indicate that clearly.
+
+For valid bills, extract STRICT JSON in this shape ONLY:
+{
+  "billInfo": {
+    "billNumber": "string or null",
+    "date": "string or null",
+    "time": "string or null",
+    "shopName": "string or null",
+    "shopAddress": "string or null",
+    "shopPhone": "string or null",
+    "gstNumber": "string or null",
+    "customerName": "string or null",
+    "paymentMethod": "string or null"
+  },
+  "items": [{"name": "string", "price": number, "quantity": number or null}],
+  "total": number,
+  "subTotal": number or null,
+  "tax": number or null,
+  "discount": number or null,
+  "isItemValid": true,
+  "invalidItems": [],
+  "isCalculationValid": true,
+  "calculationError": null,
+  "handwrittenNotes": [],
+  "summary": "Brief conclusion (<= 20 words)"
+}
+
+If the image is NOT a bill/receipt, return:
+{
+  "billInfo": {
+    "billNumber": null,
+    "date": null,
+    "time": null,
+    "shopName": null,
+    "shopAddress": null,
+    "shopPhone": null,
+    "gstNumber": null,
+    "customerName": null,
+    "paymentMethod": null
+  },
+  "items": [],
+  "total": 0,
+  "subTotal": null,
+  "tax": null,
+  "discount": null,
+  "isItemValid": false,
+  "invalidItems": [],
+  "isCalculationValid": false,
+  "calculationError": "Not a valid bill/receipt image",
+  "handwrittenNotes": [],
+  "summary": "Image is not a valid bill/receipt"
+}
+
+Rules:
+- ONLY process actual bills/receipts. Reject invoices, quotes, estimates, or other documents.
+- items: unique, ignore brands, prices numeric only. Include quantity if available.
+- total, subTotal, tax, discount: numeric only.
+- Extract ALL available bill information including bill number, date, time, shop details, customer info, etc.
+- Allowed stationery/printing list (case-insensitive): ${ALLOWED_ITEMS.join(", ")}.
+- isItemValid=false if ANY item not in allowed list; list all offending in invalidItems.
+- isCalculationValid: compare sum(items.price) to "total" within ±${ROUNDING_TOLERANCE} INR tolerance.
+- "P.out" service is now allowed as a valid stationery item.
+- Additional printing services like "Printing Services", "Printout", "Xerox", "Photocopy", "Binding", "Lamination" are also allowed.
+- If image is not a bill/receipt, set isItemValid=false, isCalculationValid=false, and provide appropriate summary.
+- NO extra keys, markdown, or prose. ONLY JSON.
+`;
+
+// Add this new constant for keyboard shortcuts help
+const KEYBOARD_SHORTCUTS = [
+  { key: 'Ctrl+V', action: 'Paste image from clipboard' },
+  { key: 'Ctrl+Enter', action: 'Validate bill (after adding remarks)' },
+  { key: 'Escape', action: 'Clear current bill' },
+  { key: 'H', action: 'Show tutorial' }
+];
+
+// DOM
+const fileInput = document.getElementById('fileInput');
+const dropZone = document.getElementById('dropZone');
+const preview = document.getElementById('preview');
+const thumb = document.getElementById('thumb');
+const fileName = document.getElementById('fileName');
+const fileInfo = document.getElementById('fileInfo');
+const validateBtn = document.getElementById('validateBtn');
+const copyJsonBtn = document.getElementById('copyJson');
+const exportCsvBtn = document.getElementById('exportCsv'); // New CSV export button
+const statusBox = document.getElementById('status');
+const statusText = document.getElementById('statusText');
+const statusBadge = document.getElementById('statusBadge');
+const progressBar = document.getElementById('progressBar');
+const progress = document.getElementById('progress');
+const steps = [document.getElementById('st1'), document.getElementById('st2'), document.getElementById('st3'), document.getElementById('st4')];
+const resultBox = document.getElementById('resultBox');
+const verdictBadge = document.getElementById('verdictBadge');
+const summaryEl = document.getElementById('summary');
+const itemsBody = document.getElementById('itemsBody');
+const sumCell = document.getElementById('sumCell');
+const billTotalCell = document.getElementById('billTotalCell');
+const tableWrap = document.getElementById('tableWrap');
+const notes = document.getElementById('notes');
+const toast = document.getElementById('toast');
+const confetti = document.getElementById('confetti');
+const zoomBtn = document.getElementById('zoomBtn');
+const clearBtn = document.getElementById('clearBtn');
+const policyBtn = document.getElementById('policyBtn');
+const historyBtn = document.getElementById('historyBtn');
+const policyModal = document.getElementById('policyModal');
+const historyModal = document.getElementById('historyModal');
+const historyPanel = document.getElementById('historyPanel');
+const historyList = document.getElementById('historyList');
+const historyModalList = document.getElementById('historyModalList');
+const statsGrid = document.getElementById('statsGrid');
+const itemsCount = document.getElementById('itemsCount');
+const validItems = document.getElementById('validItems');
+
+// New remarks elements for the new workflow
+const remarksSectionBeforeValidation = document.getElementById('remarksSectionBeforeValidation');
+const customRemarksInput = document.getElementById('customRemarksInput');
+const saveRemarksAndValidate = document.getElementById('saveRemarksAndValidate');
+const remarksStatusBeforeValidation = document.getElementById('remarksStatusBeforeValidation');
+
+// Original remarks elements (for results section)
+const remarksSection = document.getElementById('remarksSection');
+const remarksToggle = document.getElementById('remarksToggle');
+const remarksContent = document.getElementById('remarksContent');
+const remarksGrid = document.getElementById('remarksGrid');
+const downloadRemarks = document.getElementById('downloadRemarks');
+const exportCsvRemarks = document.getElementById('exportCsvRemarks'); // New CSV export for remarks
+const printRemarks = document.getElementById('printRemarks');
+const remarksStatus = document.getElementById('remarksStatus'); // For results section
+
+let currentFile = null;
+let lastJsonText = null;
+let lastValidationResult = null; // Store the last validation result
+let validationHistory = JSON.parse(localStorage.getItem('billValidatorHistory') || '[]');
+let currentRemarks = null;
+let customRemarks = ''; // Store custom remarks
+
+// Helpers
+const setStep = (idx) => {
+  steps.forEach((s,i) => {
+    s.classList.remove('active','done');
+    if(i < idx) s.classList.add('done');
+    if(i === idx) s.classList.add('active');
+  });
+};
+
+const updateProgress = (percent) => {
+  progress.style.width = `${percent}%`;
+};
+
+const showToast = (msg = 'Copied!', type = 'info') => {
+  toast.textContent = msg;
+  toast.className = 'toast'; // Reset classes
+  
+  // Add type-specific class
+  if (type === 'success') {
+    toast.classList.add('success');
+  } else if (type === 'error') {
+    toast.classList.add('error');
+  } else if (type === 'warning') {
+    toast.classList.add('warning');
+  }
+  
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
+};
+
+const fireConfetti = () => {
+  confetti.innerHTML = '';
+  const colors = ['#22c55e','#06b6d4','#f59e0b','#8b5cf6','#6366f1'];
+  for(let i = 0; i < 60; i++){
+    const p = document.createElement('div');
+    p.className = 'piece';
+    p.style.left = Math.random()*100 + 'vw';
+    p.style.background = colors[Math.floor(Math.random()*colors.length)];
+    p.style.animationDelay = (Math.random()*0.6)+'s';
+    confetti.appendChild(p);
+  }
+};
+
+const humanSize = bytes => {
+  if(bytes < 1024) return bytes + ' B';
+  if(bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1024/1024).toFixed(2) + ' MB';
+};
+
+const fileToBase64 = file => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result.split(',')[1]);
+  r.onerror = rej;
+  r.readAsDataURL(file);
+});
+
+const escapeHTML = s => (s||'').toString().replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'<','>':'>','"':'&quot;',"'":'&#039;' }[m]));
+
+const formatDate = (date) => {
+  return new Date(date).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+const updateHistory = (result) => {
+  const historyItem = {
+    id: Date.now(),
+    date: new Date().toISOString(),
+    fileName: currentFile?.name || 'Unknown',
+    isValid: result.isItemValid && result.isCalculationValid,
+    itemsCount: result.items?.length || 0,
+    validItems: result.items?.filter(it => ALLOWED_ITEMS.includes((it.name||'').toLowerCase().trim())).length || 0
+  };
+  
+  validationHistory.unshift(historyItem);
+  if (validationHistory.length > 10) {
+    validationHistory = validationHistory.slice(0, 10);
+  }
+  
+  localStorage.setItem('billValidatorHistory', JSON.stringify(validationHistory));
+  renderHistory();
+};
+
+const renderHistory = () => {
+  if (validationHistory.length === 0) {
+    historyPanel.hidden = true;
+    return;
+  }
+  
+  historyPanel.hidden = false;
+  historyList.innerHTML = '';
+  historyModalList.innerHTML = '';
+  
+  validationHistory.forEach(item => {
+    const historyItemEl = document.createElement('div');
+    historyItemEl.className = 'history-item';
+    historyItemEl.innerHTML = `
+      <div>${item.fileName}</div>
+      <div>
+        <span class="badge ${item.isValid ? 'ok' : 'bad'}">
+          ${item.isValid ? 'Valid' : 'Invalid'}
+        </span>
+        <span class="small" style="margin-left:8px">${formatDate(item.date)}</span>
+      </div>
+    `;
+    historyList.appendChild(historyItemEl);
+    
+    const modalItemEl = document.createElement('div');
+    modalItemEl.className = 'history-item';
+    modalItemEl.innerHTML = `
+      <div>
+        <div>${item.fileName}</div>
+        <div class="small">${item.validItems}/${item.itemsCount} valid items</div>
+      </div>
+      <div>
+        <span class="badge ${item.isValid ? 'ok' : 'bad'}">
+          ${item.isValid ? 'Valid' : 'Invalid'}
+        </span>
+        <div class="small" style="text-align:right; margin-top:4px">${formatDate(item.date)}</div>
+      </div>
+    `;
+    historyModalList.appendChild(modalItemEl);
+  });
+};
+
+// Remarks functionality
+const generateRemarks = (result) => {
+  const sum = (result.items||[]).reduce((a,b) => a + (+b.price||0), 0);
+  const validItemsCount = (result.items||[]).filter(it => 
+    ALLOWED_ITEMS.includes((it.name||'').toLowerCase().trim())
+  ).length;
+  const invalidItemsCount = (result.items||[]).length - validItemsCount;
+  const calculationDifference = Math.abs(sum - (result.total || 0));
+  
+  const remarks = {
+    overallStatus: result.isItemValid && result.isCalculationValid ? 'Valid' : 'Invalid',
+    itemAnalysis: {
+      totalItems: result.items?.length || 0,
+      validItems: validItemsCount,
+      invalidItems: invalidItemsCount,
+      invalidItemNames: result.invalidItems || []
+    },
+    calculationAnalysis: {
+      calculatedTotal: sum,
+      billTotal: result.total || 0,
+      difference: calculationDifference,
+      isWithinTolerance: calculationDifference <= ROUNDING_TOLERANCE
+    },
+    recommendations: [],
+    warnings: []
+  };
+  
+  // Generate recommendations
+  if (invalidItemsCount > 0) {
+    remarks.recommendations.push(`Remove or replace ${invalidItemsCount} non-stationery item(s)`);
+  }
+  
+  if (!remarks.calculationAnalysis.isWithinTolerance) {
+    remarks.recommendations.push(`Verify calculation accuracy - difference of ₹${calculationDifference.toFixed(2)} detected`);
+  }
+  
+  if (result.handwrittenNotes && result.handwrittenNotes.length > 0) {
+    remarks.recommendations.push("Review handwritten notes on the bill");
+  }
+  
+  // Generate warnings
+  if (invalidItemsCount > 0) {
+    remarks.warnings.push(`${invalidItemsCount} item(s) not eligible for reimbursement`);
+  }
+  
+  if (!remarks.calculationAnalysis.isWithinTolerance) {
+    remarks.warnings.push("Total calculation mismatch detected");
+  }
+  
+  if (result.items && result.items.length === 0) {
+    remarks.warnings.push("No items detected in the bill");
+  }
+  
+  return remarks;
+};
+
+const renderRemarks = (remarks) => {
+  currentRemarks = remarks;
+  remarksGrid.innerHTML = '';
+  
+  // Item Analysis Card
+  const itemCard = document.createElement('div');
+  itemCard.className = 'remarks-card';
+  itemCard.innerHTML = `
+    <h4><i class="fas fa-cube"></i> Item Analysis</h4>
+    <ul class="remarks-list">
+      <li>
+        <i class="fas fa-list ${remarks.itemAnalysis.totalItems > 0 ? 'valid' : 'warning'}"></i>
+        <span>Total Items: ${remarks.itemAnalysis.totalItems}</span>
+      </li>
+      <li>
+        <i class="fas fa-check-circle ${remarks.itemAnalysis.validItems > 0 ? 'valid' : 'invalid'}"></i>
+        <span>Valid Items: ${remarks.itemAnalysis.validItems}</span>
+      </li>
+      <li>
+        <i class="fas fa-times-circle ${remarks.itemAnalysis.invalidItems === 0 ? 'valid' : 'invalid'}"></i>
+        <span>Invalid Items: ${remarks.itemAnalysis.invalidItems}</span>
+      </li>
+    </ul>
+  `;
+  remarksGrid.appendChild(itemCard);
+  
+  // Calculation Analysis Card
+  const calcCard = document.createElement('div');
+  calcCard.className = 'remarks-card';
+  calcCard.innerHTML = `
+    <h4><i class="fas fa-calculator"></i> Calculation Analysis</h4>
+    <ul class="remarks-list">
+      <li>
+        <i class="fas fa-file-invoice-dollar ${remarks.calculationAnalysis.isWithinTolerance ? 'valid' : 'invalid'}"></i>
+        <span>Bill Total: ₹${remarks.calculationAnalysis.billTotal.toFixed(2)}</span>
+      </li>
+      <li>
+        <i class="fas fa-calculator ${remarks.calculationAnalysis.isWithinTolerance ? 'valid' : 'invalid'}"></i>
+        <span>Calculated Total: ₹${remarks.calculationAnalysis.calculatedTotal.toFixed(2)}</span>
+      </li>
+      <li>
+        <i class="fas fa-balance-scale ${remarks.calculationAnalysis.isWithinTolerance ? 'valid' : 'warning'}"></i>
+        <span>Difference: ₹${remarks.calculationAnalysis.difference.toFixed(2)}</span>
+      </li>
+    </ul>
+  `;
+  remarksGrid.appendChild(calcCard);
+  
+  // Recommendations Card
+  const recCard = document.createElement('div');
+  recCard.className = 'remarks-card';
+  let recHTML = `<h4><i class="fas fa-lightbulb"></i> Recommendations</h4>`;
+  
+  if (remarks.recommendations.length > 0) {
+    recHTML += `<ul class="remarks-list">`;
+    remarks.recommendations.forEach(rec => {
+      recHTML += `<li><i class="fas fa-arrow-right warning"></i><span>${rec}</span></li>`;
+    });
+    recHTML += `</ul>`;
+  } else {
+    recHTML += `<p>No recommendations. Bill appears valid.</p>`;
+  }
+  
+  recCard.innerHTML = recHTML;
+  remarksGrid.appendChild(recCard);
+  
+  // Warnings Card
+  const warnCard = document.createElement('div');
+  warnCard.className = 'remarks-card';
+  let warnHTML = `<h4><i class="fas fa-exclamation-triangle"></i> Warnings</h4>`;
+  
+  if (remarks.warnings.length > 0) {
+    warnHTML += `<ul class="remarks-list">`;
+    remarks.warnings.forEach(warn => {
+      warnHTML += `<li><i class="fas fa-exclamation invalid"></i><span>${warn}</span></li>`;
+    });
+    warnHTML += `</ul>`;
+  } else {
+    warnHTML += `<p>No warnings detected.</p>`;
+  }
+  
+  warnCard.innerHTML = warnHTML;
+  remarksGrid.appendChild(warnCard);
+  
+  remarksSection.hidden = false;
+};
+
+// Save remarks and validate
+saveRemarksAndValidate.addEventListener('click', () => {
+  customRemarks = customRemarksInput.value.trim();
+  
+  if (!customRemarks) {
+    remarksStatusBeforeValidation.textContent = 'Please add remarks before validating';
+    remarksStatusBeforeValidation.style.color = 'var(--bad)';
+    showToast('Please add remarks before validating');
+    return;
+  }
+  
+  // Save remarks and proceed with validation
+  remarksStatusBeforeValidation.textContent = 'Remarks saved. Starting validation...';
+  remarksStatusBeforeValidation.style.color = 'var(--ok)';
+  
+  // Trigger validation
+  validateBill();
+});
+
+// Upload
+dropZone.addEventListener('click', () => fileInput.click());
+['dragenter','dragover','dragleave','drop'].forEach(ev => {
+  dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); }, false);
+});
+['dragenter','dragover'].forEach(ev => {
+  dropZone.addEventListener(ev, () => dropZone.classList.add('drag'));
+});
+['dragleave','drop'].forEach(ev => {
+  dropZone.addEventListener(ev, () => dropZone.classList.remove('drag'));
+});
+dropZone.addEventListener('drop', e => {
+  if(e.dataTransfer.files?.length){
+    fileInput.files = e.dataTransfer.files;
+    handleFiles();
+  }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  // Ctrl+V to paste
+  if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.target.matches('textarea, input')) {
+    fileInput.click();
+  }
+  // Ctrl+Enter to validate (only works if remarks are already saved)
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && currentFile && customRemarks && remarksSectionBeforeValidation.hidden === false) {
+    validateBill();
+  }
+  // ESC to clear
+  if (e.key === 'Escape') {
+    clearBtn.click();
+  }
+});
+
+document.addEventListener('paste', e => {
+  const item = [...e.clipboardData.items].find(i => i.type.startsWith('image/'));
+  if(item){
+    const f = item.getAsFile();
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    fileInput.files = dt.files;
+    handleFiles();
+    showToast('Image pasted from clipboard');
+  }
+});
+fileInput.addEventListener('change', handleFiles);
+
+// Extracted validation function
+async function validateBill() {
+  if(!currentFile) return;
+
+  remarksSectionBeforeValidation.hidden = true; // Hide the remarks section
+  progressBar.hidden = false; // Show progress bar
+  setStep(1);
+  updateProgress(25);
+  statusText.textContent = 'Encoding image…';
+  statusBadge.className = 'badge warnb pulse';
+  statusBadge.innerHTML = '<i class="fas fa-spinner loading-spinner"></i> Processing';
+
+  let base64;
+  try {
+    base64 = await fileToBase64(currentFile);
+  } catch(err) {
+    showError('Could not read image. Try a different file.');
+    return;
+  }
+
+  setStep(2);
+  updateProgress(50);
+  statusText.textContent = 'Analyzing with AI…';
+
+  try {
+    const mimeType = currentFile.type || 'image/jpeg';
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: PROMPT },
+            { inlineData: { mimeType, data: base64 } }
+          ]
+        }]
+      })
+    });
+
+    const data = await res.json();
+    if(data.error) throw new Error(data.error.message || 'API Error');
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if(!text) throw new Error('No content returned from AI');
+
+    const clean = text.startsWith('```') ? text.replace(/^```json|^```|\s*```$/g,'').trim() : text;
+    const resultObj = JSON.parse(clean);
+
+    setStep(3);
+    updateProgress(75);
+    statusText.textContent = 'Validating data…';
+    await new Promise(r => setTimeout(r, 300));
+
+    // Check if the image is not a valid bill
+    if (!resultObj.isItemValid && !resultObj.isCalculationValid && 
+        resultObj.calculationError === "Not a valid bill/receipt image") {
+      showError('Invalid bill: The uploaded image is not a valid bill/receipt. Please upload a proper bill image.');
+      return;
+    }
+
+    showResults(resultObj);
+    updateProgress(100);
+    setStep(4);
+    statusText.textContent = 'Validation complete. Press ESC to clear or use export options below.';
+    statusBadge.className = 'badge ok';
+    statusBadge.innerHTML = '<i class="fas fa-check"></i> Complete';
+    validateBtn.disabled = false;
+    copyJsonBtn.disabled = false;
+    
+    // Show success message
+    showToast('Validation complete!');
+  } catch(err) {
+    console.error(err);
+    showError(err.message || 'Processing failed. Please try again.');
+  }
+}
+
+function handleFiles(){
+  const f = fileInput.files[0];
+  if(!f) return;
+  
+  // Check file type
+  if (!f.type.startsWith('image/')) {
+    showError('Invalid file type. Please upload an image file (JPG/PNG).');
+    return;
+  }
+  
+  // Check file size (limit to 10MB instead of 5MB)
+  if (f.size > 10 * 1024 * 1024) {
+    showError('File too large. Please upload an image smaller than 10MB.');
+    return;
+  }
+  
+  currentFile = f;
+  
+  // Add loading state to thumbnail
+  thumb.classList.add('loading');
+  thumb.alt = 'Loading preview...';
+  
+  // Create object URL for preview
+  const objectUrl = URL.createObjectURL(f);
+  thumb.src = objectUrl;
+  
+  // When image loads, remove loading state
+  thumb.onload = () => {
+    thumb.classList.remove('loading');
+    thumb.alt = '';
+  };
+  
+  // Handle image load errors
+  thumb.onerror = () => {
+    thumb.classList.remove('loading');
+    thumb.alt = 'Failed to load preview';
+    showError('Failed to load image preview. Please try another file.');
+  };
+  
+  fileName.textContent = f.name || 'pasted-image';
+  fileInfo.textContent = `${humanSize(f.size)}`;
+  
+  // Add file type information
+  const fileType = f.type || 'image/*';
+  const fileTypeEl = document.getElementById('fileType');
+  if (fileTypeEl) {
+    fileTypeEl.textContent = fileType;
+    fileTypeEl.style.cssText = `
+      font-size: 0.8rem;
+      background: rgba(99, 102, 241, 0.1);
+      color: var(--brand2);
+      padding: 2px 8px;
+      border-radius: 12px;
+      display: inline-block;
+      margin-top: 4px;
+      font-weight: 600;
+    `;
+  }
+  
+  preview.hidden = false;
+  validateBtn.disabled = true;
+  copyJsonBtn.disabled = true;
+  exportCsvBtn.disabled = true;
+  exportCsvBtn.style.display = 'none'; // Hide CSV button
+  statusBox.hidden = false;
+  progressBar.hidden = true; // Hide progress bar until validation
+  resultBox.hidden = true;
+  remarksSectionBeforeValidation.hidden = false; // Show remarks section
+  remarksSection.hidden = true; // Hide results remarks section
+  customRemarks = ''; // Clear custom remarks
+  customRemarksInput.value = ''; // Clear input field
+  remarksStatusBeforeValidation.textContent = ''; // Clear remarks status
+  lastJsonText = null;
+  lastValidationResult = null; // Clear last result
+  setStep(0);
+  updateProgress(0);
+  statusText.textContent = 'File uploaded. Please add remarks and then validate.';
+  statusBadge.className = 'badge warnb';
+  statusBadge.innerHTML = '<i class="fas fa-clock"></i> Awaiting Remarks';
+}
+
+zoomBtn.addEventListener('click', () => {
+  if(thumb.src && currentFile){
+    // Create a modal for better image viewing
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      backdrop-filter: blur(4px);
+    `;
+    
+    const imgContainer = document.createElement('div');
+    imgContainer.style.cssText = `
+      position: relative;
+      max-width: 90vw;
+      max-height: 90vh;
+    `;
+    
+    const img = document.createElement('img');
+    img.src = thumb.src;
+    img.style.cssText = `
+      max-width: 90vw;
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    `;
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+    closeBtn.style.cssText = `
+      position: absolute;
+      top: -40px;
+      right: 0;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border: none;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.3s;
+    `;
+    
+    closeBtn.onmouseover = () => {
+      closeBtn.style.background = 'rgba(255, 255, 255, 0.3)';
+    };
+    
+    closeBtn.onmouseout = () => {
+      closeBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+    };
+    
+    closeBtn.onclick = () => {
+      document.body.removeChild(modal);
+    };
+    
+    // Close modal when clicking outside the image
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        document.body.removeChild(modal);
+      }
+    };
+    
+    // Close modal with Escape key
+    const closeOnEscape = (e) => {
+      if (e.key === 'Escape' && document.body.contains(modal)) {
+        document.body.removeChild(modal);
+        document.removeEventListener('keydown', closeOnEscape);
+      }
+    };
+    
+    document.addEventListener('keydown', closeOnEscape);
+    
+    imgContainer.appendChild(img);
+    imgContainer.appendChild(closeBtn);
+    modal.appendChild(imgContainer);
+    document.body.appendChild(modal);
+  }
+});
+
+clearBtn.addEventListener('click', () => {
+  // Revoke the object URL to free memory
+  if (thumb.src && thumb.src.startsWith('blob:')) {
+    URL.revokeObjectURL(thumb.src);
+  }
+  
+  fileInput.value = '';
+  preview.hidden = true;
+  currentFile = null;
+  validateBtn.disabled = true;
+  copyJsonBtn.disabled = true;
+  exportCsvBtn.disabled = true;
+  exportCsvBtn.style.display = 'none'; // Hide CSV button
+  exportCsvRemarks.style.display = 'none'; // Hide CSV remarks button
+  statusBox.hidden = true;
+  progressBar.hidden = true;
+  resultBox.hidden = true;
+  remarksSectionBeforeValidation.hidden = true; // Hide remarks section
+  remarksSection.hidden = true;
+  
+  // Hide bill details section
+  const billDetailsSection = document.getElementById('billDetailsSection');
+  if (billDetailsSection) {
+    billDetailsSection.hidden = true;
+  }
+  
+  customRemarks = ''; // Clear custom remarks
+  customRemarksInput.value = ''; // Clear input field
+  remarksStatusBeforeValidation.textContent = ''; // Clear remarks status
+  remarksStatus.textContent = ''; // Clear results remarks status
+  lastJsonText = null;
+  lastValidationResult = null; // Clear last result
+  
+  // Clear thumbnail
+  thumb.src = '';
+  thumb.alt = '';
+  fileName.textContent = '—';
+  fileInfo.textContent = '—';
+  
+  // Clear file type if it exists
+  const fileTypeEl = document.getElementById('fileType');
+  if (fileTypeEl) {
+    fileTypeEl.textContent = '—';
+  }
+});
+
+// Modal handling
+policyBtn.addEventListener('click', () => {
+  policyModal.style.display = 'block';
+});
+
+historyBtn.addEventListener('click', () => {
+  historyModal.style.display = 'block';
+});
+
+document.querySelectorAll('.close').forEach(closeBtn => {
+  closeBtn.addEventListener('click', () => {
+    policyModal.style.display = 'none';
+    historyModal.style.display = 'none';
+  });
+});
+
+window.addEventListener('click', (e) => {
+  if (e.target === policyModal) {
+    policyModal.style.display = 'none';
+  }
+  if (e.target === historyModal) {
+    historyModal.style.display = 'none';
+  }
+});
+
+// Remarks toggle
+remarksToggle.addEventListener('click', () => {
+  const isExpanded = remarksContent.classList.contains('expanded');
+  if (isExpanded) {
+    remarksContent.classList.remove('expanded');
+    remarksToggle.innerHTML = '<span>Show Details</span><i class="fas fa-chevron-down"></i>';
+  } else {
+    remarksContent.classList.add('expanded');
+    remarksToggle.innerHTML = '<span>Hide Details</span><i class="fas fa-chevron-up"></i>';
+  }
+});
+
+// Download remarks
+downloadRemarks.addEventListener('click', () => {
+  if (!currentRemarks) return;
+  
+  // Include custom remarks and bill details in the downloaded JSON
+  const remarksWithCustom = {
+    validationReport: {
+      fileName: currentFile?.name || 'Unknown',
+      validationDate: new Date().toISOString(),
+      summary: lastValidationResult?.summary || 'No summary available'
+    },
+    billDetails: lastValidationResult ? {
+      items: lastValidationResult.items || [],
+      totalItems: (lastValidationResult.items || []).length,
+      billTotal: lastValidationResult.total || 0,
+      handwrittenNotes: lastValidationResult.handwrittenNotes || [],
+      calculatedSum: (lastValidationResult.items || []).reduce((a, b) => a + (+b.price || 0), 0)
+    } : null,
+    ...currentRemarks,
+    customRemarks: customRemarks
+  };
+  
+  const remarksText = JSON.stringify(remarksWithCustom, null, 2);
+  const blob = new Blob([remarksText], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = "bill-remarks-" + Date.now() + ".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showToast('Remarks downloaded');
+});
+
+// Export to CSV
+exportCsvBtn.addEventListener('click', () => {
+  if (!lastValidationResult) return;
+  
+  let csvContent = "Bill Validation Report\n";
+  csvContent += "File," + (currentFile?.name || 'Unknown') + "\n";
+  csvContent += "Date," + new Date().toLocaleString() + "\n\n";
+  
+  // Add comprehensive bill information
+  if (lastValidationResult.billInfo) {
+    csvContent += "Bill Information\n";
+    if (lastValidationResult.billInfo.billNumber) csvContent += "Bill Number," + lastValidationResult.billInfo.billNumber + "\n";
+    if (lastValidationResult.billInfo.date) csvContent += "Date," + lastValidationResult.billInfo.date + "\n";
+    if (lastValidationResult.billInfo.time) csvContent += "Time," + lastValidationResult.billInfo.time + "\n";
+    if (lastValidationResult.billInfo.shopName) csvContent += "Shop Name," + lastValidationResult.billInfo.shopName + "\n";
+    if (lastValidationResult.billInfo.shopAddress) csvContent += "Shop Address," + lastValidationResult.billInfo.shopAddress + "\n";
+    if (lastValidationResult.billInfo.shopPhone) csvContent += "Shop Phone," + lastValidationResult.billInfo.shopPhone + "\n";
+    if (lastValidationResult.billInfo.gstNumber) csvContent += "GST Number," + lastValidationResult.billInfo.gstNumber + "\n";
+    if (lastValidationResult.billInfo.customerName) csvContent += "Customer Name," + lastValidationResult.billInfo.customerName + "\n";
+    if (lastValidationResult.billInfo.paymentMethod) csvContent += "Payment Method," + lastValidationResult.billInfo.paymentMethod + "\n";
+    if (lastValidationResult.subTotal) csvContent += "Sub Total,₹" + Number(lastValidationResult.subTotal).toFixed(2) + "\n";
+    if (lastValidationResult.tax) csvContent += "Tax,₹" + Number(lastValidationResult.tax).toFixed(2) + "\n";
+    if (lastValidationResult.discount) csvContent += "Discount,₹" + Number(lastValidationResult.discount).toFixed(2) + "\n";
+    csvContent += "\n";
+  }
+  
+  // Add bill details
+  csvContent += "Bill Details\n";
+  csvContent += "Total Items," + (lastValidationResult.items || []).length + "\n";
+  csvContent += "Bill Total,₹" + Number(lastValidationResult.total || 0).toFixed(2) + "\n";
+  if (lastValidationResult.handwrittenNotes && lastValidationResult.handwrittenNotes.length > 0) {
+    csvContent += "Handwritten Notes," + lastValidationResult.handwrittenNotes.join('; ') + "\n";
+  }
+  csvContent += "\n";
+  
+  // Add items to CSV
+  csvContent += "Item,Quantity,Price (₹),Status\n";
+  (lastValidationResult.items || []).forEach(item => {
+    const allowed = ALLOWED_ITEMS.includes((item.name || '').toLowerCase().trim());
+    const status = allowed ? "Allowed" : "Disallowed";
+    csvContent += "" + (item.name || '-') + "," + (item.quantity || '-') + "," + Number(item.price || 0).toFixed(2) + "," + status + "\n";
+  });
+  
+  // Add summary rows
+  const sum = (lastValidationResult.items || []).reduce((a, b) => a + (+b.price || 0), 0);
+  csvContent += "\nSummary\n";
+  csvContent += "Calculated Sum,₹" + sum.toFixed(2) + ",\n";
+  csvContent += "Bill Total,₹" + Number(lastValidationResult.total || 0).toFixed(2) + ",\n";
+  
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = "bill-validation-" + Date.now() + ".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showToast('CSV exported');
+});
+
+// Export remarks to CSV
+exportCsvRemarks.addEventListener('click', () => {
+  if (!currentRemarks) return;
+  
+  let csvContent = "Bill Validation Report\n";
+  csvContent += "File," + (currentFile?.name || 'Unknown') + "\n";
+  csvContent += "Date," + new Date().toLocaleString() + "\n\n";
+  
+  // Add comprehensive bill information if available
+  if (lastValidationResult && lastValidationResult.billInfo) {
+    csvContent += "Bill Information\n";
+    if (lastValidationResult.billInfo.billNumber) csvContent += "Bill Number," + lastValidationResult.billInfo.billNumber + "\n";
+    if (lastValidationResult.billInfo.date) csvContent += "Date," + lastValidationResult.billInfo.date + "\n";
+    if (lastValidationResult.billInfo.time) csvContent += "Time," + lastValidationResult.billInfo.time + "\n";
+    if (lastValidationResult.billInfo.shopName) csvContent += "Shop Name," + lastValidationResult.billInfo.shopName + "\n";
+    if (lastValidationResult.billInfo.shopAddress) csvContent += "Shop Address," + lastValidationResult.billInfo.shopAddress + "\n";
+    if (lastValidationResult.billInfo.shopPhone) csvContent += "Shop Phone," + lastValidationResult.billInfo.shopPhone + "\n";
+    if (lastValidationResult.billInfo.gstNumber) csvContent += "GST Number," + lastValidationResult.billInfo.gstNumber + "\n";
+    if (lastValidationResult.billInfo.customerName) csvContent += "Customer Name," + lastValidationResult.billInfo.customerName + "\n";
+    if (lastValidationResult.billInfo.paymentMethod) csvContent += "Payment Method," + lastValidationResult.billInfo.paymentMethod + "\n";
+    if (lastValidationResult.subTotal) csvContent += "Sub Total,₹" + Number(lastValidationResult.subTotal).toFixed(2) + "\n";
+    if (lastValidationResult.tax) csvContent += "Tax,₹" + Number(lastValidationResult.tax).toFixed(2) + "\n";
+    if (lastValidationResult.discount) csvContent += "Discount,₹" + Number(lastValidationResult.discount).toFixed(2) + "\n";
+    csvContent += "\n";
+  }
+  
+  // Add bill details if available
+  if (lastValidationResult) {
+    csvContent += "Bill Details\n";
+    csvContent += "Total Items," + (lastValidationResult.items || []).length + "\n";
+    csvContent += "Bill Total,₹" + Number(lastValidationResult.total || 0).toFixed(2) + "\n";
+    if (lastValidationResult.handwrittenNotes && lastValidationResult.handwrittenNotes.length > 0) {
+      csvContent += "Handwritten Notes," + lastValidationResult.handwrittenNotes.join('; ') + "\n";
+    }
+    csvContent += "\n";
+  }
+  
+  // Add item analysis
+  csvContent += "Item Analysis\n";
+  csvContent += "Total Items," + (currentRemarks.itemAnalysis.totalItems || 0) + "\n";
+  csvContent += "Valid Items," + (currentRemarks.itemAnalysis.validItems || 0) + "\n";
+  csvContent += "Invalid Items," + (currentRemarks.itemAnalysis.invalidItems || 0) + "\n\n";
+  
+  // Add calculation analysis
+  csvContent += "Calculation Analysis\n";
+  csvContent += "Bill Total,₹" + (currentRemarks.calculationAnalysis.billTotal || 0).toFixed(2) + "\n";
+  csvContent += "Calculated Total,₹" + (currentRemarks.calculationAnalysis.calculatedTotal || 0).toFixed(2) + "\n";
+  csvContent += "Difference,₹" + (currentRemarks.calculationAnalysis.difference || 0).toFixed(2) + "\n\n";
+  
+  // Add recommendations
+  csvContent += "Recommendations\n";
+  if (currentRemarks.recommendations.length > 0) {
+    currentRemarks.recommendations.forEach(rec => {
+      csvContent += "," + rec + "\n";
+    });
+  } else {
+    csvContent += ",No recommendations. Bill appears valid.\n";
+  }
+  csvContent += "\n";
+  
+  // Add warnings
+  csvContent += "Warnings\n";
+  if (currentRemarks.warnings.length > 0) {
+    currentRemarks.warnings.forEach(warn => {
+      csvContent += "," + warn + "\n";
+    });
+  } else {
+    csvContent += ",No warnings detected.\n";
+  }
+  csvContent += "\n";
+  
+  // Add custom remarks
+  if (customRemarks) {
+    csvContent += "Your Remarks\n";
+    csvContent += "," + customRemarks.replace(/\n/g, ' | ') + "\n";
+  }
+  
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = "bill-remarks-" + Date.now() + ".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showToast('Remarks CSV exported');
+});
+
+// Print remarks
+printRemarks.addEventListener('click', () => {
+  if (!currentRemarks) return;
+  
+  const sum = lastValidationResult ? (lastValidationResult.items||[]).reduce((a, b) => a + (+b.price || 0), 0) : 0;
+  
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Bill Validation Report</title>
+        <style>
+          body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, Helvetica, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background: #f6f8ff; color: #0f172a; }
+          body.dark-mode { background: #0b1021; color: #e5e7eb; }
+          h1 { color: #4f46e5; border-bottom: 2px solid #ebefff; padding-bottom: 10px; }
+          h1.dark-mode { color: #8b5cf6; border-bottom: 2px solid #0f1430; }
+          .section { margin-bottom: 25px; }
+          .section h2 { border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; color: #475569; }
+          .section h2.dark-mode { border-bottom: 1px solid #1e293b; color: #cbd5e1; }
+          ul { padding-left: 20px; }
+          .custom-remarks { background-color: #e0e7ff; padding: 15px; border-radius: 5px; }
+          .custom-remarks.dark-mode { background-color: #1e1b4b; }
+          .summary-box { background: #f1f5f9; border-left: 4px solid #4f46e5; padding: 15px; margin: 15px 0; border-radius: 0 8px 8px 0; }
+          .summary-box.dark-mode { background: #1e293b; border-left: 4px solid #8b5cf6; }
+          table { width: 100%; border-collapse: collapse; margin: 15px 0; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+          table.dark-mode { background: #1e293b; }
+          th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; }
+          th.dark-mode, td.dark-mode { border: 1px solid #334155; }
+          th { background-color: #ebefff; font-weight: 600; }
+          th.dark-mode { background-color: #334155; }
+          .status-valid { color: #10b981; font-weight: bold; }
+          .status-invalid { color: #ef4444; font-weight: bold; }
+          .file-info { background: #e2e8f0; padding: 15px; border-radius: 8px; margin: 15px 0; }
+          .file-info.dark-mode { background: #1e293b; }
+          .bill-details { background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px solid #fef3c7; margin: 15px 0; }
+          .bill-details.dark-mode { background: #452c0b; border: 1px solid #78350f; }
+          .validation-summary { background: linear-gradient(135deg, #e0e7ff, #ede9fe); padding: 20px; border-radius: 12px; margin: 20px 0; }
+          .validation-summary.dark-mode { background: linear-gradient(135deg, #1e1b4b, #312e81); }
+          .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-top: 16px; }
+          .summary-card { background: white; border-radius: 10px; padding: 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+          .summary-card.dark-mode { background: #334155; }
+          .summary-card.valid { border: 1px solid #bbf7d0; }
+          .summary-card.valid.dark-mode { border: 1px solid #059669; }
+          .summary-card.invalid { border: 1px solid #fecaca; }
+          .summary-card.invalid.dark-mode { border: 1px solid #dc2626; }
+          .summary-card h4 { margin: 0 0 8px 0; font-size: 0.9rem; color: #64748b; }
+          .summary-card h4.dark-mode { color: #94a3b8; }
+          .summary-card .value { font-size: 1.4rem; font-weight: 800; }
+          .summary-card .valid-value { color: #10b981; }
+          .summary-card .invalid-value { color: #ef4444; }
+          .comprehensive-bill-info { background: #f1f5f9; padding: 20px; border-radius: 12px; margin: 20px 0; }
+          .comprehensive-bill-info.dark-mode { background: #1e293b; }
+          .bill-details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 16px; }
+          .bill-detail-card { background: #e2e8f0; border-radius: 8px; padding: 16px; }
+          .bill-detail-card.dark-mode { background: #334155; }
+          .detail-label { font-size: 0.85rem; color: #64748b; margin-bottom: 6px; font-weight: 600; }
+          .detail-label.dark-mode { color: #94a3b8; }
+          .detail-value { font-size: 1rem; font-weight: 600; color: #0f172a; word-break: break-word; }
+          .detail-value.dark-mode { color: #e5e7eb; }
+          @media print {
+            body { background: white; color: black; }
+            h1, .section h2, .summary-card h4, .detail-label { color: black; }
+            .custom-remarks, .summary-box, .file-info, .bill-details, .validation-summary, .summary-card, .comprehensive-bill-info, .bill-detail-card { 
+              background: white !important; 
+              color: black !important;
+              border: 1px solid #ddd !important;
+            }
+            table { background: white !important; }
+            th { background: #f5f5f5 !important; }
+            .status-valid { color: #059669 !important; }
+            .status-invalid { color: #dc2626 !important; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Bill Validation Report</h1>
+        
+        <div class="file-info">
+          <strong>File:</strong> ${currentFile?.name || 'Unknown'}<br>
+          <strong>Date:</strong> ${new Date().toLocaleString()}
+        </div>
+        
+        <div class="section">
+          <h2>Validation Summary</h2>
+          <div class="summary-box">
+            <p><strong>Status:</strong> <span class="${currentRemarks.overallStatus === 'Valid' ? 'status-valid' : 'status-invalid'}">${currentRemarks.overallStatus}</span></p>
+            <p><strong>Summary:</strong> ${lastValidationResult?.summary || 'No summary available'}</p>
+          </div>
+        </div>
+        
+        ${lastValidationResult ? `
+        ${lastValidationResult.billInfo ? `
+        <div class="comprehensive-bill-info">
+          <h2>Comprehensive Bill Information</h2>
+          <div class="bill-details-grid">
+            ${lastValidationResult.billInfo.billNumber ? `<div class="bill-detail-card"><div class="detail-label">Bill Number</div><div class="detail-value">${escapeHTML(lastValidationResult.billInfo.billNumber)}</div></div>` : ''}
+            ${lastValidationResult.billInfo.date ? `<div class="bill-detail-card"><div class="detail-label">Date</div><div class="detail-value">${escapeHTML(lastValidationResult.billInfo.date)}</div></div>` : ''}
+            ${lastValidationResult.billInfo.time ? `<div class="bill-detail-card"><div class="detail-label">Time</div><div class="detail-value">${escapeHTML(lastValidationResult.billInfo.time)}</div></div>` : ''}
+            ${lastValidationResult.billInfo.shopName ? `<div class="bill-detail-card"><div class="detail-label">Shop Name</div><div class="detail-value">${escapeHTML(lastValidationResult.billInfo.shopName)}</div></div>` : ''}
+            ${lastValidationResult.billInfo.shopAddress ? `<div class="bill-detail-card"><div class="detail-label">Shop Address</div><div class="detail-value">${escapeHTML(lastValidationResult.billInfo.shopAddress)}</div></div>` : ''}
+            ${lastValidationResult.billInfo.shopPhone ? `<div class="bill-detail-card"><div class="detail-label">Shop Phone</div><div class="detail-value">${escapeHTML(lastValidationResult.billInfo.shopPhone)}</div></div>` : ''}
+            ${lastValidationResult.billInfo.gstNumber ? `<div class="bill-detail-card"><div class="detail-label">GST Number</div><div class="detail-value">${escapeHTML(lastValidationResult.billInfo.gstNumber)}</div></div>` : ''}
+            ${lastValidationResult.billInfo.customerName ? `<div class="bill-detail-card"><div class="detail-label">Customer Name</div><div class="detail-value">${escapeHTML(lastValidationResult.billInfo.customerName)}</div></div>` : ''}
+            ${lastValidationResult.billInfo.paymentMethod ? `<div class="bill-detail-card"><div class="detail-label">Payment Method</div><div class="detail-value">${escapeHTML(lastValidationResult.billInfo.paymentMethod)}</div></div>` : ''}
+            ${lastValidationResult.subTotal ? `<div class="bill-detail-card"><div class="detail-label">Sub Total</div><div class="detail-value">₹${Number(lastValidationResult.subTotal).toFixed(2)}</div></div>` : ''}
+            ${lastValidationResult.tax ? `<div class="bill-detail-card"><div class="detail-label">Tax</div><div class="detail-value">₹${Number(lastValidationResult.tax).toFixed(2)}</div></div>` : ''}
+            ${lastValidationResult.discount ? `<div class="bill-detail-card"><div class="detail-label">Discount</div><div class="detail-value">₹${Number(lastValidationResult.discount).toFixed(2)}</div></div>` : ''}
+          </div>
+        </div>
+        ` : ''}
+        
+        <div class="validation-summary">
+          <h3>Validation Metrics</h3>
+          <div class="summary-grid">
+            <div class="summary-card ${lastValidationResult.isItemValid ? 'valid' : 'invalid'}">
+              <h4>Item Validation</h4>
+              <div class="value ${lastValidationResult.isItemValid ? 'valid-value' : 'invalid-value'}">
+                ${lastValidationResult.isItemValid ? 'PASS' : 'FAIL'}
+              </div>
+            </div>
+            <div class="summary-card ${lastValidationResult.isCalculationValid ? 'valid' : 'invalid'}">
+              <h4>Calculation</h4>
+              <div class="value ${lastValidationResult.isCalculationValid ? 'valid-value' : 'invalid-value'}">
+                ${lastValidationResult.isCalculationValid ? 'PASS' : 'FAIL'}
+              </div>
+            </div>
+            <div class="summary-card">
+              <h4>Total Items</h4>
+              <div class="value">${(lastValidationResult.items || []).length}</div>
+            </div>
+            <div class="summary-card">
+              <h4>Bill Total</h4>
+              <div class="value">₹${Number(lastValidationResult.total || 0).toFixed(2)}</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="section">
+          <h2>Extracted Bill Details</h2>
+          <div class="bill-details">
+            <p><strong>Total Items:</strong> ${(lastValidationResult.items || []).length}</p>
+            <p><strong>Bill Total:</strong> ₹${Number(lastValidationResult.total || 0).toFixed(2)}</p>
+            ${lastValidationResult.handwrittenNotes && lastValidationResult.handwrittenNotes.length > 0 ? 
+              `<p><strong>Handwritten Notes:</strong> ${lastValidationResult.handwrittenNotes.join('; ')}</p>` : ''}
+          </div>
+          
+          <h3>Itemized List</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Price (₹)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(lastValidationResult.items || []).map(item => {
+                const allowed = ALLOWED_ITEMS.includes((item.name || '').toLowerCase().trim());
+                return `
+                  <tr>
+                    <td>${escapeHTML(item.name || '-')}${item.quantity ? ` (${item.quantity})` : ''}</td>
+                    <td>₹${Number(item.price || 0).toFixed(2)}</td>
+                    <td>${allowed ? '<span class="status-valid">Allowed</span>' : '<span class="status-invalid">Disallowed</span>'}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td><strong>Calculated Sum</strong></td>
+                <td><strong>₹${sum.toFixed(2)}</strong></td>
+                <td></td>
+              </tr>
+              <tr>
+                <td><strong>Bill Total</strong></td>
+                <td><strong>₹${Number(lastValidationResult.total || 0).toFixed(2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        ` : ''}
+        
+        <div class="section">
+          <h2>Item Analysis</h2>
+          <ul>
+            <li>Total Items: ${currentRemarks.itemAnalysis.totalItems}</li>
+            <li>Valid Items: ${currentRemarks.itemAnalysis.validItems}</li>
+            <li>Invalid Items: ${currentRemarks.itemAnalysis.invalidItems}</li>
+          </ul>
+        </div>
+        
+        <div class="section">
+          <h2>Calculation Analysis</h2>
+          <ul>
+            <li>Bill Total: ₹${currentRemarks.calculationAnalysis.billTotal.toFixed(2)}</li>
+            <li>Calculated Total: ₹${currentRemarks.calculationAnalysis.calculatedTotal.toFixed(2)}</li>
+            <li>Difference: ₹${currentRemarks.calculationAnalysis.difference.toFixed(2)}</li>
+          </ul>
+        </div>
+        
+        <div class="section">
+          <h2>Recommendations</h2>
+          <ul>
+            ${currentRemarks.recommendations.length > 0 
+              ? currentRemarks.recommendations.map(rec => `<li>${rec}</li>`).join('')
+              : '<li>No recommendations. Bill appears valid.</li>'
+            }
+          </ul>
+        </div>
+        
+        <div class="section">
+          <h2>Warnings</h2>
+          <ul>
+            ${currentRemarks.warnings.length > 0 
+              ? currentRemarks.warnings.map(warn => `<li>${warn}</li>`).join('')
+              : '<li>No warnings detected.</li>'
+            }
+          </ul>
+        </div>
+        
+        ${customRemarks ? `
+        <div class="section">
+          <h2>Your Remarks</h2>
+          <div class="custom-remarks">
+            <p>${customRemarks.replace(/\n/g, '<br>')}</p>
+          </div>
+        </div>
+        ` : ''}
+        
+        <script>
+          // Apply dark mode if user prefers it
+          if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.body.classList.add('dark-mode');
+            document.querySelectorAll('.section h2, .summary-box, .file-info, .bill-details, .validation-summary, .summary-card, table, th, td, .custom-remarks, .comprehensive-bill-info, .bill-detail-card, .detail-label').forEach(el => {
+              el.classList.add('dark-mode');
+            });
+          }
+        </script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.print();
+});
+
+// Save custom remarks
+saveCustomRemarks.addEventListener('click', () => {
+  customRemarks = customRemarksInput.value.trim();
+  
+  // Provide visual feedback
+  if (customRemarks) {
+    saveCustomRemarks.innerHTML = '<i class="fas fa-check"></i> Remarks Saved';
+    saveCustomRemarks.classList.add('ok');
+    remarksStatus.textContent = 'Remarks saved';
+    remarksStatus.style.color = 'var(--ok)';
+    remarksReminder.style.display = 'none'; // Hide reminder when remarks are saved
+    setTimeout(() => {
+      saveCustomRemarks.innerHTML = '<i class="fas fa-save"></i> Save Remarks';
+      saveCustomRemarks.classList.remove('ok');
+    }, 2000);
+  } else {
+    remarksStatus.textContent = 'No remarks to save';
+    remarksStatus.style.color = 'var(--muted)';
+  }
+  
+  showToast('Custom remarks saved');
+});
+
+// Update remarks status when user types
+customRemarksInput.addEventListener('input', () => {
+  if (customRemarksInput.value.trim() && !customRemarks) {
+    remarksStatus.textContent = 'Unsaved remarks';
+    remarksStatus.style.color = 'var(--warn)';
+  } else if (!customRemarksInput.value.trim()) {
+    remarksStatus.textContent = '';
+  }
+});
+
+// Clear custom remarks when a new file is selected
+
+// Validation
+validateBtn.addEventListener('click', async () => {
+  if(!currentFile) return;
+
+  // Check if user wants to add remarks before validation
+  if (!customRemarks && customRemarksInput.value.trim()) {
+    // If there's text in the input but not saved, ask user if they want to save it
+    if (confirm("You have unsaved remarks. Do you want to save them before validating?")) {
+      customRemarks = customRemarksInput.value.trim();
+      showToast('Remarks saved');
+      remarksStatus.textContent = 'Remarks saved';
+      remarksStatus.style.color = 'var(--ok)';
+      remarksReminder.style.display = 'none'; // Hide reminder when remarks are saved
+    }
+  }
+  
+  // Remind user to add remarks if they haven't already (but don't block validation)
+  if (!customRemarks && !customRemarksInput.value.trim()) {
+    // Show a toast reminder instead of a blocking confirmation
+    showToast('Consider adding remarks before validating');
+  }
+
+  // Call the validateBill function
+  await validateBill();
+});
+
+function showError(msg){
+  resultBox.hidden = false;
+  verdictBadge.className = 'badge bad';
+  verdictBadge.innerHTML = '<i class="fas fa-times"></i> Error';
+  summaryEl.textContent = msg;
+  
+  // Add error message element
+  const errorEl = document.createElement('div');
+  errorEl.className = 'error-message fade-in-element';
+  errorEl.innerHTML = `
+    <h4><i class="fas fa-exclamation-circle"></i> Validation Error</h4>
+    <p>${msg}</p>
+    <p class="small">Please check your image and try again. Ensure it's a clear photo of a stationery bill.</p>
+  `;
+  notes.innerHTML = '';
+  notes.appendChild(errorEl);
+  
+  // Hide bill details section on error
+  const billDetailsSection = document.getElementById('billDetailsSection');
+  if (billDetailsSection) {
+    billDetailsSection.hidden = true;
+  }
+  
+  tableWrap.hidden = true;
+  statsGrid.hidden = true;
+  remarksSection.hidden = true;
+  remarksSectionBeforeValidation.hidden = false; // Show remarks section again
+  exportCsvBtn.style.display = 'none'; // Hide CSV button
+  exportCsvRemarks.style.display = 'none'; // Hide CSV remarks button
+  customRemarks = ''; // Clear custom remarks
+  customRemarksInput.value = ''; // Clear input field
+  remarksStatusBeforeValidation.textContent = ''; // Clear remarks status
+  remarksStatus.textContent = ''; // Clear results remarks status
+  lastJsonText = null;
+  lastValidationResult = null; // Clear last result
+  validateBtn.disabled = false;
+  statusBadge.className = 'badge bad';
+  statusBadge.innerHTML = '<i class="fas fa-times"></i> Error';
+}
+
+// Enhanced results display to show all bill details
+function showResults(r){
+  // Add custom remarks to the result object
+  r.customRemarks = customRemarks;
+  
+  lastValidationResult = r; // Store the result for CSV export
+  const sum = (r.items||[]).reduce((a,b) => a + (+b.price||0), 0);
+  const validItemsCount = (r.items||[]).filter(it => 
+    ALLOWED_ITEMS.includes((it.name||'').toLowerCase().trim())
+  ).length;
+  
+  // Populate bill details section
+  const billDetailsSection = document.getElementById('billDetailsSection');
+  const totalItemsValue = document.getElementById('totalItemsValue');
+  const billTotalValue = document.getElementById('billTotalValue');
+  const calculatedSumValue = document.getElementById('calculatedSumValue');
+  const differenceValue = document.getElementById('differenceValue');
+  const handwrittenNotes = document.getElementById('handwrittenNotes');
+  const handwrittenNotesContent = document.getElementById('handwrittenNotesContent');
+  
+  if (billDetailsSection) {
+    totalItemsValue.textContent = (r.items||[]).length;
+    billTotalValue.textContent = `₹${Number(r.total||0).toFixed(2)}`;
+    calculatedSumValue.textContent = `₹${sum.toFixed(2)}`;
+    
+    const difference = Math.abs(sum - (r.total || 0));
+    differenceValue.textContent = `₹${difference.toFixed(2)}`;
+    
+    // Remove any existing error class
+    differenceValue.classList.remove('error');
+    
+    // Add error styling if difference exceeds tolerance
+    if (difference > 1.00) {
+      differenceValue.classList.add('error');
+    }
+    
+    // Handle handwritten notes
+    if (r.handwrittenNotes && r.handwrittenNotes.length > 0) {
+      handwrittenNotes.hidden = false;
+      handwrittenNotesContent.textContent = r.handwrittenNotes.join('; ');
+    } else {
+      handwrittenNotes.hidden = true;
+    }
+    
+    billDetailsSection.hidden = false;
+  }
+  
+  // Add comprehensive bill information section
+  const comprehensiveBillInfo = document.createElement('div');
+  comprehensiveBillInfo.className = 'comprehensive-bill-info fade-in-element';
+  comprehensiveBillInfo.innerHTML = `
+    <h3><i class="fas fa-file-invoice"></i> Comprehensive Bill Information</h3>
+    <div class="bill-details-grid">
+      ${r.billInfo?.billNumber ? `<div class="bill-detail-card"><div class="detail-label">Bill Number</div><div class="detail-value">${escapeHTML(r.billInfo.billNumber)}</div></div>` : ''}
+      ${r.billInfo?.date ? `<div class="bill-detail-card"><div class="detail-label">Date</div><div class="detail-value">${escapeHTML(r.billInfo.date)}</div></div>` : ''}
+      ${r.billInfo?.time ? `<div class="bill-detail-card"><div class="detail-label">Time</div><div class="detail-value">${escapeHTML(r.billInfo.time)}</div></div>` : ''}
+      ${r.billInfo?.shopName ? `<div class="bill-detail-card"><div class="detail-label">Shop Name</div><div class="detail-value">${escapeHTML(r.billInfo.shopName)}</div></div>` : ''}
+      ${r.billInfo?.shopAddress ? `<div class="bill-detail-card"><div class="detail-label">Shop Address</div><div class="detail-value">${escapeHTML(r.billInfo.shopAddress)}</div></div>` : ''}
+      ${r.billInfo?.shopPhone ? `<div class="bill-detail-card"><div class="detail-label">Shop Phone</div><div class="detail-value">${escapeHTML(r.billInfo.shopPhone)}</div></div>` : ''}
+      ${r.billInfo?.gstNumber ? `<div class="bill-detail-card"><div class="detail-label">GST Number</div><div class="detail-value">${escapeHTML(r.billInfo.gstNumber)}</div></div>` : ''}
+      ${r.billInfo?.customerName ? `<div class="bill-detail-card"><div class="detail-label">Customer Name</div><div class="detail-value">${escapeHTML(r.billInfo.customerName)}</div></div>` : ''}
+      ${r.billInfo?.paymentMethod ? `<div class="bill-detail-card"><div class="detail-label">Payment Method</div><div class="detail-value">${escapeHTML(r.billInfo.paymentMethod)}</div></div>` : ''}
+      ${r.subTotal ? `<div class="bill-detail-card"><div class="detail-label">Sub Total</div><div class="detail-value">₹${Number(r.subTotal).toFixed(2)}</div></div>` : ''}
+      ${r.tax ? `<div class="bill-detail-card"><div class="detail-label">Tax</div><div class="detail-value">₹${Number(r.tax).toFixed(2)}</div></div>` : ''}
+      ${r.discount ? `<div class="bill-detail-card"><div class="detail-label">Discount</div><div class="detail-value">₹${Number(r.discount).toFixed(2)}</div></div>` : ''}
+    </div>
+  `;
+  
+  // Insert the comprehensive bill info before the validation summary
+  const billDetailsSectionParent = document.getElementById('billDetailsSection')?.parentNode;
+  if (billDetailsSectionParent) {
+    billDetailsSectionParent.insertBefore(comprehensiveBillInfo, document.getElementById('billDetailsSection'));
+  }
+  
+  // Add validation summary card
+  const validationSummary = document.createElement('div');
+  validationSummary.className = 'validation-summary fade-in-element';
+  validationSummary.innerHTML = `
+    <h3><i class="fas fa-chart-pie"></i> Validation Summary</h3>
+    <div class="summary-grid">
+      <div class="summary-card ${r.isItemValid ? 'valid' : 'invalid'}">
+        <h4>Item Validation</h4>
+        <div class="value ${r.isItemValid ? 'valid-value' : 'invalid-value'}">
+          ${r.isItemValid ? 'PASS' : 'FAIL'}
+        </div>
+      </div>
+      <div class="summary-card ${r.isCalculationValid ? 'valid' : 'invalid'}">
+        <h4>Calculation</h4>
+        <div class="value ${r.isCalculationValid ? 'valid-value' : 'invalid-value'}">
+          ${r.isCalculationValid ? 'PASS' : 'FAIL'}
+        </div>
+      </div>
+      <div class="summary-card">
+        <h4>Total Items</h4>
+        <div class="value">${r.items?.length || 0}</div>
+      </div>
+      <div class="summary-card">
+        <h4>Bill Total</h4>
+        <div class="value">₹${Number(r.total||0).toFixed(2)}</div>
+      </div>
+    </div>
+  `;
+  
+  // Insert the summary before the table
+  const tableWrapParent = tableWrap.parentNode;
+  if (tableWrapParent) {
+    tableWrapParent.insertBefore(validationSummary, tableWrap);
+  }
+  
+  itemsBody.innerHTML = '';
+  (r.items||[]).forEach(it => {
+    const allowed = ALLOWED_ITEMS.includes((it.name||'').toLowerCase().trim());
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHTML(it.name||'-')}</td>
+      <td>${it.quantity ? `${it.quantity} × ` : ''}₹${Number(it.price||0).toFixed(2)}</td>
+      <td>${allowed ? 
+        '<span class="badge ok"><i class="fas fa-check"></i> Allowed</span>' : 
+        '<span class="badge bad"><i class="fas fa-times"></i> Disallowed</span>'}</td>
+    `;
+    itemsBody.appendChild(tr);
+  });
+  sumCell.textContent = sum.toFixed(2);
+  billTotalCell.textContent = Number(r.total||0).toFixed(2);
+  tableWrap.hidden = false;
+  statsGrid.hidden = false;
+  
+  itemsCount.textContent = (r.items||[]).length;
+  validItems.textContent = validItemsCount;
+
+  const isValid = r.isItemValid && r.isCalculationValid;
+  verdictBadge.className = `badge ${isValid ? 'ok' : 'bad'}`;
+  verdictBadge.innerHTML = isValid ? 
+    '<i class="fas fa-check-circle"></i> Valid' : 
+    '<i class="fas fa-times-circle"></i> Invalid';
+  summaryEl.textContent = r.summary || (isValid ? 'Bill is VALID!' : 'Bill is INVALID');
+
+  lastJsonText = JSON.stringify(r, null, 2);
+
+  let extra = [];
+  if(r.invalidItems?.length) extra.push(`<b>Disallowed items</b>: ${r.invalidItems.map(escapeHTML).join(', ')}`);
+  if(r.calculationError) extra.push(`<b>Calc issue</b>: ${escapeHTML(r.calculationError)}`);
+  if((r.handwrittenNotes||[]).length) extra.push(`<b>Handwritten notes</b>: ${r.handwrittenNotes.map(escapeHTML).join('; ')}`);
+  // Add custom remarks to the notes section
+  if(customRemarks) extra.push(`<b>Your remarks</b>: ${escapeHTML(customRemarks)}`);
+  
+  // Add success message if validation is valid
+  if (isValid) {
+    const successEl = document.createElement('div');
+    successEl.className = 'success-message fade-in-element';
+    successEl.innerHTML = `
+      <h4><i class="fas fa-check-circle"></i> Validation Successful</h4>
+      <p>This bill has passed all validation checks and is eligible for reimbursement.</p>
+    `;
+    notes.innerHTML = '';
+    notes.appendChild(successEl);
+  } else {
+    notes.innerHTML = extra.length ? `<div class="small">${extra.join('<br/>')}</div>` : '';
+  }
+
+  resultBox.hidden = false;
+  
+  // Enable CSV export button
+  exportCsvBtn.disabled = false;
+  exportCsvBtn.style.display = 'flex'; // Show CSV button
+  
+  // Show CSV export for remarks
+  exportCsvRemarks.style.display = 'flex';
+  
+  // Generate and render remarks
+  const remarks = generateRemarks(r);
+  renderRemarks(remarks);
+  
+  // Add to history
+  updateHistory(r);
+  
+  if(isValid) fireConfetti();
+}
+
+copyJsonBtn.addEventListener('click', async () => {
+  if(lastJsonText){
+    await navigator.clipboard.writeText(lastJsonText);
+    showToast('Result JSON copied');
+  } else {
+    showToast('Nothing to copy');
+  }
+});
+
+// Initialize history on load
+renderHistory();
+
+// Tutorial functionality
+const tutorialCard = document.getElementById('tutorialCard');
+const closeTutorial = document.getElementById('closeTutorial');
+const themeToggle = document.getElementById('themeToggle');
+const shortcutList = document.getElementById('shortcutList');
+
+// Populate keyboard shortcuts in tutorial
+function populateShortcuts() {
+  if (shortcutList) {
+    shortcutList.innerHTML = '';
+    KEYBOARD_SHORTCUTS.forEach(shortcut => {
+      const shortcutEl = document.createElement('div');
+      shortcutEl.className = 'shortcut-item';
+      shortcutEl.innerHTML = `
+        <span>${shortcut.action}</span>
+        <span class="shortcut-key">${shortcut.key}</span>
+      `;
+      shortcutList.appendChild(shortcutEl);
+    });
+  }
+}
+
+// Check if tutorial should be shown (first visit or user hasn't dismissed it)
+const shouldShowTutorial = !localStorage.getItem('tutorialDismissed');
+
+if (shouldShowTutorial) {
+  tutorialCard.style.display = 'block';
+  populateShortcuts(); // Populate shortcuts when tutorial is shown
+} else {
+  tutorialCard.style.display = 'none';
+}
+
+closeTutorial.addEventListener('click', () => {
+  tutorialCard.style.display = 'none';
+  // Remember that user dismissed the tutorial
+  localStorage.setItem('tutorialDismissed', 'true');
+});
+
+// Theme toggle functionality
+let isDarkMode = localStorage.getItem('darkMode') === 'true' || 
+  (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+function updateTheme() {
+  if (isDarkMode) {
+    document.body.classList.add('dark-mode');
+    themeToggle.innerHTML = '<i class="fas fa-sun"></i> Light Mode';
+  } else {
+    document.body.classList.remove('dark-mode');
+    themeToggle.innerHTML = '<i class="fas fa-moon"></i> Dark Mode';
+  }
+  localStorage.setItem('darkMode', isDarkMode);
+}
+
+// Initialize theme
+updateTheme();
+
+themeToggle.addEventListener('click', () => {
+  isDarkMode = !isDarkMode;
+  updateTheme();
+});
+
+// Show tutorial again if user presses 'H' key
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() === 'h') {
+    tutorialCard.style.display = 'block';
+    populateShortcuts(); // Ensure shortcuts are populated
+  }
+});

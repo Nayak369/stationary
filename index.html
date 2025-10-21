@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>✨ AI Stationery Bill Validator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  <meta name="color-scheme" content="light dark"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  <div class="blob b3"></div>
+
+  <div class="wrap">
+    <header>
+      <div class="title">
+        <i class="fas fa-receipt"></i> AI Stationery Bill Validator
+      </div>
+      <div class="header-actions">
+        <p class="subtitle">Upload any bill image. AI will verify stationery eligibility & calculation accuracy.</p>
+        <button class="btn ghost small" id="themeToggle">
+          <i class="fas fa-moon"></i> Dark Mode
+        </button>
+      </div>
+    </header>
+
+    <!-- Welcome Tutorial -->
+    <div class="tutorial-card" id="tutorialCard">
+      <div class="tutorial-header">
+        <h2><i class="fas fa-graduation-cap"></i> Getting Started</h2>
+        <button class="btn ghost small" id="closeTutorial">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="tutorial-content">
+        <div class="tutorial-steps">
+          <div class="tutorial-step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h3>Upload Bill</h3>
+              <p>Drag & drop or click to upload a clear image of your stationery bill</p>
+            </div>
+          </div>
+          <div class="tutorial-step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h3>Add Remarks</h3>
+              <p>Describe the context or any special considerations for this validation</p>
+            </div>
+          </div>
+          <div class="tutorial-step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h3>Validate</h3>
+              <p>Our AI will analyze the bill and verify items & calculations</p>
+            </div>
+          </div>
+          <div class="tutorial-step">
+            <div class="step-number">4</div>
+            <div class="step-content">
+              <h3>Review Results</h3>
+              <p>Check the detailed analysis and export results if needed</p>
+            </div>
+          </div>
+        </div>
+        <div class="tutorial-tip">
+          <i class="fas fa-lightbulb"></i>
+          <p><strong>Pro Tip:</strong> For best results, upload clear, well-lit images of bills with readable text</p>
+        </div>
+        <!-- Keyboard Shortcuts Section -->
+        <div class="keyboard-shortcuts">
+          <h3><i class="fas fa-keyboard"></i> Keyboard Shortcuts</h3>
+          <div class="shortcut-list" id="shortcutList">
+            <!-- Shortcuts will be populated by JavaScript -->
+          </div>
+        </div>
+        <!-- New Features Section -->
+        <div class="new-features">
+          <h3><i class="fas fa-star"></i> New Features</h3>
+          <ul class="features-list">
+            <li><i class="fas fa-check-circle valid-feature"></i> Enhanced printing services validation</li>
+            <li><i class="fas fa-check-circle valid-feature"></i> Improved dark mode experience</li>
+            <li><i class="fas fa-check-circle valid-feature"></i> Better error handling and messages</li>
+            <li><i class="fas fa-check-circle valid-feature"></i> Detailed validation summary cards</li>
+            <li><i class="fas fa-check-circle valid-feature"></i> Enhanced print reports</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- LEFT: Input -->
+      <section class="card" aria-labelledby="uploadTitle">
+        <div class="topbar">
+          <div class="pill">
+            <i class="fas fa-robot"></i> AI-Powered • GST Bills Only
+          </div>
+          <button class="btn secondary" id="historyBtn" type="button">
+            <i class="fas fa-history"></i> History
+          </button>
+        </div>
+
+        <div id="dropZone" class="drop" tabindex="0" aria-label="Upload Area">
+          <div class="drop-icon">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 16V4m0 0 4 4m-4-4-4 4" stroke="url(#g1)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M20 16.5a3.5 3.5 0 0 0-3.5-3.5h-.3A6.5 6.5 0 1 0 5 14.6" stroke="url(#g2)" stroke-width="1.6" stroke-linecap="round"/>
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="24" y2="24">
+                  <stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
+                </linearGradient>
+                <linearGradient id="g2" x1="0" y1="0" x2="24" y2="24">
+                  <stop stop-color="#22c55e"/><stop offset="1" stop-color="#06b6d4"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <h3 id="uploadTitle">Drag & drop or click to upload</h3>
+          <p class="hint">JPG/PNG supported. Press <kbd>Ctrl</kbd>+<kbd>V</kbd> to paste or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to validate.</p>
+          <div class="supported-formats">
+            <span class="format-badge">JPG</span>
+            <span class="format-badge">PNG</span>
+          </div>
+          <input id="fileInput" type="file" accept="image/*"/>
+        </div>
+
+        <div class="preview" id="preview" hidden>
+          <div class="thumb-container">
+            <div class="thumb-badge">
+              <i class="fas fa-image"></i>
+            </div>
+            <div class="thumb"><img id="thumb" alt=""/></div>
+          </div>
+          <div class="meta">
+            <div class="file-info">
+              <div class="file-name" id="fileName">—</div>
+              <div class="file-meta" id="fileInfo">—</div>
+              <div class="file-type" id="fileType">—</div>
+            </div>
+            <div class="preview-actions">
+              <button class="btn btn-small ghost" id="zoomBtn" type="button">
+                <i class="fas fa-search"></i> View Full
+              </button>
+              <button class="btn btn-small ghost" id="clearBtn" type="button">
+                <i class="fas fa-trash"></i> Remove
+              </button>
+            </div>
+            <div class="preview-hint">
+              <i class="fas fa-info-circle"></i> Click "View Full" to preview the entire image
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Remarks Section - Shown after file upload -->
+        <div id="remarksSectionBeforeValidation" class="remarks-section" hidden>
+          <div class="remarks-header">
+            <div class="remarks-title">
+              <i class="fas fa-edit"></i> Add Validation Remarks
+            </div>
+          </div>
+          <div class="custom-remarks-section">
+            <p class="small" style="margin-top: 0; color: var(--muted);">
+              Please add remarks about this bill before validation. This helps document the context and reasoning for the validation.
+            </p>
+            <textarea id="customRemarksInput" placeholder="Describe the purpose of this validation, any special considerations, or other relevant information..."></textarea>
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+              <button class="btn" id="saveRemarksAndValidate" style="flex: 1;">
+                <i class="fas fa-save"></i> Save Remarks & Validate Bill
+              </button>
+            </div>
+            <div id="remarksStatusBeforeValidation" class="small" style="margin-top: 8px; color: var(--muted); text-align: center;"></div>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:12px; margin-top:16px; flex-wrap:wrap">
+          <button class="btn" id="validateBtn" type="button" disabled style="display: none;">
+            <i class="fas fa-bolt"></i> Validate Bill
+          </button>
+          <button class="btn warn" id="copyJson" type="button" disabled>
+            <i class="fas fa-copy"></i> Copy JSON
+          </button>
+          <button class="btn secondary" id="exportCsv" type="button" disabled style="display:none">
+            <i class="fas fa-file-csv"></i> Export CSV
+          </button>
+        </div>
+
+        <div class="progress-bar" id="progressBar" hidden>
+          <div class="progress" id="progress"></div>
+        </div>
+
+        <div class="status" id="status" hidden>
+          <div class="row">
+            <span class="badge warnb" id="statusBadge">
+              <i class="fas fa-clock"></i> Waiting
+            </span>
+            <span id="statusText">Add an image to begin.</span>
+          </div>
+          <div class="timeline" id="timeline">
+            <div class="step" id="st1"><div class="dot"></div><div><h4>Upload</h4><p>Image received & prepared.</p></div></div>
+            <div class="step" id="st2"><div class="dot"></div><div><h4>Analyze</h4><p>Sending to AI for extraction.</p></div></div>
+            <div class="step" id="st3"><div class="dot"></div><div><h4>Validate</h4><p>Checking categories & totals.</p></div></div>
+            <div class="step" id="st4"><div class="dot"></div><div><h4>Result</h4><p>Final verdict and summary.</p></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT: Output -->
+      <section class="card" aria-live="polite">
+        <div class="topbar">
+          <div class="pill">
+            <i class="fas fa-chart-bar"></i> Results
+          </div>
+          <button class="btn secondary" id="policyBtn" type="button">
+            <i class="fas fa-info-circle"></i> Policy
+          </button>
+        </div>
+
+        <div id="resultBox" class="status" hidden>
+          <div class="row">
+            <span class="badge" id="verdictBadge">—</span>
+            <span id="summary">—</span>
+          </div>
+          
+          <!-- Bill Details Section -->
+          <div class="bill-details-section" id="billDetailsSection" hidden>
+            <div class="section-header">
+              <h3><i class="fas fa-receipt"></i> Bill Details</h3>
+            </div>
+            <div class="bill-info-grid">
+              <div class="bill-info-card">
+                <div class="info-label">Total Items</div>
+                <div class="info-value" id="totalItemsValue">0</div>
+              </div>
+              <div class="bill-info-card">
+                <div class="info-label">Bill Total</div>
+                <div class="info-value" id="billTotalValue">₹0.00</div>
+              </div>
+              <div class="bill-info-card">
+                <div class="info-label">Calculated Sum</div>
+                <div class="info-value" id="calculatedSumValue">₹0.00</div>
+              </div>
+              <div class="bill-info-card">
+                <div class="info-label">Difference</div>
+                <div class="info-value" id="differenceValue">₹0.00</div>
+              </div>
+            </div>
+            <div class="handwritten-notes" id="handwrittenNotes" hidden>
+              <h4><i class="fas fa-sticky-note"></i> Handwritten Notes</h4>
+              <div id="handwrittenNotesContent" class="notes-content"></div>
+            </div>
+          </div>
+          
+          <div class="stats-grid" id="statsGrid" hidden>
+            <div class="stat-card">
+              <div class="stat-label">Items Count</div>
+              <div class="stat-value" id="itemsCount">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Valid Items</div>
+              <div class="stat-value" id="validItems">0</div>
+            </div>
+          </div>
+
+          <div id="tableWrap" hidden>
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th style="width:120px">Price (₹)</th>
+                  <th style="width:120px">Status</th>
+                </tr>
+              </thead>
+              <tbody id="itemsBody"></tbody>
+              <tfoot>
+                <tr><td style="text-align:right">Sum</td><td id="sumCell">—</td><td></td></tr>
+                <tr><td style="text-align:right">Bill Total</td><td id="billTotalCell">—</td><td></td></tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div id="notes" class="small" style="margin-top:10px"></div>
+
+          <!-- New Remarks Section -->
+          <div class="remarks-section" id="remarksSection" hidden>
+            <div class="remarks-header">
+              <div class="remarks-title">
+                <i class="fas fa-comment-alt"></i> Validation Remarks
+              </div>
+              <button class="remarks-toggle" id="remarksToggle">
+                <span>Show Details</span>
+                <i class="fas fa-chevron-down"></i>
+              </button>
+            </div>
+            <div class="remarks-content" id="remarksContent">
+              <div class="remarks-grid" id="remarksGrid">
+                <!-- Dynamic content will be inserted here -->
+              </div>
+              <!-- Custom Remarks Input - Hidden in new workflow -->
+              <div class="custom-remarks-section" style="display: none;">
+                <h4><i class="fas fa-edit"></i> Add Your Remarks</h4>
+                <textarea id="customRemarksInputOld" placeholder="Add any additional notes or comments about this validation..."></textarea>
+                <button class="btn btn-small ghost" id="saveCustomRemarks" style="display: none;">
+                  <i class="fas fa-save"></i> Save Remarks
+                </button>
+              </div>
+              <div class="remarks-actions">
+                <button class="btn btn-small ghost" id="downloadRemarks">
+                  <i class="fas fa-download"></i> Download JSON
+                </button>
+                <button class="btn btn-small ghost" id="exportCsvRemarks" style="display:none">
+                  <i class="fas fa-file-csv"></i> Export CSV
+                </button>
+                <button class="btn btn-small ghost" id="printRemarks">
+                  <i class="fas fa-print"></i> Print
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="history-panel" id="historyPanel" hidden>
+          <div class="small" style="margin-bottom:8px; font-weight:600">Recent Validations</div>
+          <div id="historyList"></div>
+        </div>
+
+        <footer style="margin-top:18px">
+          <div>
+            <span>Powered by Surya International</span>
+            <div class="note">Internal use only • Made by Team NBI</div>
+          </div>
+          <div class="tooltip">
+            <i class="fas fa-question-circle"></i>
+            <span class="tooltiptext">Upload a clear image of your stationery bill for AI validation</span>
+          </div>
+        </footer>
+      </section>
+    </div>
+  </div>
+
+  <!-- Policy Modal -->
+  <div id="policyModal" class="modal">
+    <div class="modal-content fade-in">
+      <span class="close">&times;</span>
+      <h2 style="margin-top:0">Stationery Policy</h2>
+      <p class="small">The following items are eligible for reimbursement:</p>
+      
+      <div class="policy-list">
+        <div class="policy-item"><i class="fas fa-check"></i> Pens, Pencils, Markers</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Notebooks, Registers, Files</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Folders, Document Holders</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Staplers, Pins, Clips</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Erasers, Sharpeners, Rubbers</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Paper (A4, A3, Card Sheets)</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Ink, Toner Cartridges</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Tape, Glue, Adhesives</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Correction Fluid, Tape</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Calculators</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Cups, Bottles, Jugs, Flasks</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Business Cards, Letterheads</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Posters, Banners, Hoardings</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Invitations, Greeting Cards</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Calendars, ID Cards</div>
+        <div class="policy-item"><i class="fas fa-check"></i> Certificates, Brochures, Flyers</div>
+      </div>
+      
+      <div class="policy-item" style="margin-top:16px">
+        <i class="fas fa-info-circle" style="color:var(--brand2)"></i>
+        <span>Total must match within ±₹1.00 tolerance</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Modal -->
+  <div id="historyModal" class="modal">
+    <div class="modal-content fade-in">
+      <span class="close">&times;</span>
+      <h2 style="margin-top:0">Validation History</h2>
+      <div id="historyModalList"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite">Copied!</div>
+  <div id="confetti" class="confetti" aria-hidden="true"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
