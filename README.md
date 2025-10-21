@@ -134,7 +134,7 @@ graph LR
 
 ## 👨‍💻 Made by
 
-Made by Satyajit
+Made by Team NBI
 
 ## 📄 License
 
