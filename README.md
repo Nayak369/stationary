@@ -112,7 +112,7 @@ The validator recognizes common stationery and printing items including:
 
 - **Frontend**: HTML, CSS, JavaScript
 - **AI Engine**: Google Gemini API
-- **Model**: gemini-1.5-flash
+- **Model**: gemini-2.5-flash
 - **No Backend Required**: Runs entirely in the browser
 - **Data Privacy**: All processing happens client-side
 
