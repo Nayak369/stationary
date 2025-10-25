@@ -1,8 +1,7 @@
 // ✅ YOUR API KEY — EMBEDDED AS REQUESTED
 const API_KEY = 'AIzaSyC7D_n5PQ41TmyAtf3KAt1fKk3-CBYACHU';
-// ✅ CORRECT MODEL & ENDPOINT (v1 + gemini-2.5-flash for better PDF processing)
-// Using gemini-2.5-flash model which is optimized for document processing including PDFs
-const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(API_KEY)}`;
+// ✅ CORRECT MODEL & ENDPOINT (v1 + gemini-1.5-pro for better OCR)
+const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro:generateContent?key=${encodeURIComponent(API_KEY)}`;
 
 const ROUNDING_TOLERANCE = 1.00;
 
@@ -21,30 +20,16 @@ const ALLOWED_ITEMS = [
 const PROMPT = `
 You are an expert bill validator and data extractor with advanced OCR capabilities. Analyze this image and determine if it's a valid bill/receipt. If it is, extract ALL the details. If it's not a bill, indicate that clearly.
 
-CRITICAL OCR INSTRUCTIONS FOR MAXIMUM ACCURACY:
-- Extract BOTH typed and handwritten content with equal attention - DO NOT SKIP HANDWRITTEN CONTENT
-- Pay special attention to handwritten notes, corrections, and annotations - these are often key details
-- If you see handwritten content, transcribe it accurately even if handwriting is messy or unclear
-- Look for crossed-out items, corrections, or annotations that might affect the total - these must be processed correctly
-- Extract all numerical values precisely, including those in handwritten form - precision is critical
-- If there are multiple prices for an item, use the final/corrected price - ignore strikethrough or crossed-out prices
+CRITICAL OCR INSTRUCTIONS:
+- Extract BOTH typed and handwritten content with equal attention
+- Pay special attention to handwritten notes, corrections, and annotations
+- If you see handwritten content, transcribe it accurately even if handwriting is messy
+- Look for crossed-out items, corrections, or annotations that might affect the total
+- Extract all numerical values precisely, including those in handwritten form
+- If there are multiple prices for an item, use the final/corrected price
 - For handwritten content, make special effort to distinguish between similar-looking characters (like 0 and O, 1 and l, etc.)
-- Pay attention to context when interpreting handwritten text to ensure accurate extraction - use surrounding context to understand meaning
-- If you're unsure about a handwritten item, include it in the response with a note about the uncertainty - DO NOT SKIP UNCERTAIN ITEMS
-
-ENHANCED DATA EXTRACTION REQUIREMENTS:
-- Extract ALL items line by line - do not skip any items even if they seem insignificant
-- For each item, extract: name, price, quantity, and total amount when available
-- When quantity is present, always include it - it's crucial for validation
-- When total amount is present for an item, include it - this is often more accurate than calculated values
-- Extract all bill information fields: bill number, date, time, shop name, shop address, shop phone, GST number, customer name, payment method
-- Extract the final bill total, subtotal, tax, and discount amounts - these are critical for validation
-- Include all handwritten notes in the handwrittenNotes array - these often contain important information
-- For items like "P.out 30 × ₹2.00", interpret this as price=30, quantity=2, not price=2, quantity=30
-- When extracting price and quantity, consider the context - if the first number is larger and the second is smaller, the larger number is likely the price
-- For handwritten text, extract ALL visible text even if it's partially unclear - do not omit text that is difficult to read
-- If handwritten text is unclear or partially visible, include it with a note about its quality rather than omitting it
-- When in doubt about handwritten content, include it with a confidence indicator (e.g., "(possibly: text)") rather than excluding it
+- Pay attention to context when interpreting handwritten text to ensure accurate extraction
+- If you're unsure about a handwritten item, include it in the response with a note about the uncertainty
 
 For valid bills, extract STRICT JSON in this shape ONLY:
 {
@@ -59,7 +44,7 @@ For valid bills, extract STRICT JSON in this shape ONLY:
     "customerName": "string or null",
     "paymentMethod": "string or null"
   },
-  "items": [{"name": "string", "price": number, "quantity": number or null, "total": number or null}],
+  "items": [{"name": "string", "price": number, "quantity": number or null}],
   "total": number,
   "subTotal": number or null,
   "tax": number or null,
@@ -98,24 +83,19 @@ If the image is NOT a bill/receipt, return:
   "summary": "Image is not a valid bill/receipt"
 }
 
-ENHANCED EXTRACTION RULES:
-- ONLY process actual bills/receipts. Reject invoices, quotes, estimates, or other documents - be strict about this
-- Items: each must be unique, ignore brands, prices must be numeric only, include quantity when available, include total when available
-- Total, subTotal, tax, discount: must be numeric only - convert words to numbers if needed
-- Extract ALL available bill information including bill number, date, time, shop details, customer info, etc. - be comprehensive
+Rules:
+- ONLY process actual bills/receipts. Reject invoices, quotes, estimates, or other documents.
+- items: unique, ignore brands, prices numeric only. Include quantity if available.
+- total, subTotal, tax, discount: numeric only.
+- Extract ALL available bill information including bill number, date, time, shop details, customer info, etc.
 - Allowed stationary/printing list (case-insensitive): ${ALLOWED_ITEMS.join(", ")}.
-- Plants, trees, and nursery items are specifically allowed as they fall under the "plants" category.
-- isItemValid=true for all items (stationary items list is now optional to accommodate new items not in the predefined list)
-- isCalculationValid: compare calculated sum (using item total amounts when available, otherwise price × quantity) to "total" within ±${ROUNDING_TOLERANCE} INR tolerance. Our validation logic prioritizes item.total when available, otherwise calculates as price × quantity.
+- isItemValid=false if ANY item not in allowed list; list all offending in invalidItems.
+- isCalculationValid: compare sum(items.price) to "total" within ±${ROUNDING_TOLERANCE} INR tolerance.
 - "P.out" service is now allowed as a valid stationary item.
 - Additional printing services like "Printing Services", "Printout", "Xerox", "Photocopy", "Binding", "Lamination" are also allowed.
-- Bills from nurseries, garden centers, and similar businesses are valid even if they contain external notes or have minor calculation differences.
 - If image is not a bill/receipt, set isItemValid=false, isCalculationValid=false, and provide appropriate summary.
-- Pay special attention to handwritten content - extract it as "handwrittenNotes" in the response - this is mandatory
-- NO extra keys, markdown, or prose. ONLY JSON. - be strict about format
-- Double-check all extracted values for accuracy before returning - accuracy is more important than speed
-- When in doubt, include the information rather than omitting it - it's better to have extra data than missing data
-- For bills with calculation discrepancies, extract the values as accurately as possible and note any discrepancies in the response
+- Pay special attention to handwritten content - extract it as "handwrittenNotes" in the response
+- NO extra keys, markdown, or prose. ONLY JSON.
 `;
 
 // Add this new constant for keyboard shortcuts help
@@ -154,7 +134,6 @@ const toast = document.getElementById('toast');
 const confetti = document.getElementById('confetti');
 const zoomBtn = document.getElementById('zoomBtn');
 const clearBtn = document.getElementById('clearBtn');
-const resetBtn = document.getElementById('resetBtn');
 const policyBtn = document.getElementById('policyBtn');
 const historyBtn = document.getElementById('historyBtn');
 const policyModal = document.getElementById('policyModal');
@@ -246,116 +225,10 @@ const humanSize = bytes => {
 };
 
 const fileToBase64 = file => new Promise((res, rej) => {
-  console.log('Converting file to base64:', file.name, file.type, file.size);
   const r = new FileReader();
-  r.onload = () => {
-    const result = r.result;
-    console.log('File read complete, result size:', result?.length);
-    res(result.split(',')[1]);
-  };
-  r.onerror = (error) => {
-    console.error('File read error:', error);
-    rej(error);
-  };
+  r.onload = () => res(r.result.split(',')[1]);
+  r.onerror = rej;
   r.readAsDataURL(file);
-});
-
-// PDF preprocessing to reduce file size and improve processing
-const preprocessPDF = (file) => new Promise((resolve, reject) => {
-  // For now, we'll just resolve with the original file
-  // In a more advanced implementation, we could use a PDF library to:
-  // 1. Extract only the first few pages (most bills are 1 page)
-  // 2. Reduce image quality in PDFs
-  // 3. Remove unnecessary metadata
-  resolve(file);
-});
-
-// Compress image to reduce file size and processing time
-// Enhanced preprocessing to handle larger files while maintaining OCR accuracy
-const compressImage = (file, quality = 0.7) => new Promise((resolve, reject) => {
-  if (file.type === 'application/pdf') {
-    // For PDF files, preprocess to reduce complexity
-    preprocessPDF(file).then(resolve).catch(reject);
-    return;
-  }
-  
-  const img = new Image();
-  img.src = URL.createObjectURL(file);
-  
-  img.onload = () => {
-    // Create canvas to resize image
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    // Calculate new dimensions based on file size for better processing
-    // For larger files, use smaller dimensions to reduce processing time
-    let maxWidth, maxHeight;
-    const fileSizeMB = file.size / (1024 * 1024);
-    
-    if (fileSizeMB > 10) {
-      // Very large files (10MB+) - use smaller dimensions
-      maxWidth = 800;
-      maxHeight = 800;
-    } else if (fileSizeMB > 5) {
-      // Large files (5-10MB) - use medium dimensions
-      maxWidth = 1000;
-      maxHeight = 1000;
-    } else {
-      // Smaller files - use larger dimensions for better OCR
-      maxWidth = 1200;
-      maxHeight = 1200;
-    }
-    
-    let width = img.width;
-    let height = img.height;
-    
-    if (width > height) {
-      if (width > maxWidth) {
-        height = Math.round((height *= maxWidth / width));
-        width = maxWidth;
-      }
-    } else {
-      if (height > maxHeight) {
-        width = Math.round((width *= maxHeight / height));
-        height = maxHeight;
-      }
-    }
-    
-    canvas.width = width;
-    canvas.height = height;
-    
-    // Enhanced image preprocessing for better OCR with adaptive quality
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    
-    // Draw resized image
-    ctx.drawImage(img, 0, 0, width, height);
-    
-    // Apply image enhancement for better OCR
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.filter = 'contrast(1.2) brightness(1.1)'; // Enhanced enhancement for better OCR
-    ctx.drawImage(canvas, 0, 0);
-    ctx.filter = 'none'; // Reset filter
-    
-    // Convert to blob with adaptive compression based on file size
-    // Use higher quality for smaller files, lower for larger files
-    const compressionQuality = fileSizeMB > 10 ? 0.6 : fileSizeMB > 5 ? 0.7 : 0.8;
-    
-    canvas.toBlob(blob => {
-      if (blob) {
-        // Create new file with compressed data
-        const compressedFile = new File([blob], file.name, {
-          type: 'image/jpeg',
-          lastModified: Date.now()
-        });
-        resolve(compressedFile);
-      } else {
-        reject(new Error('Image compression failed'));
-      }
-    }, 'image/jpeg', compressionQuality);
-  };
-  
-  img.onerror = reject;
 });
 
 const escapeHTML = s => (s||'').toString().replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'<','>':'>','"':'&quot;',"'":'&#039;' }[m]));
@@ -369,123 +242,14 @@ const formatDate = (date) => {
   });
 };
 
-// === ENHANCED DATA EXTRACTION AND CALCULATION LOGIC ===
-// Unified functions to calculate item totals and overall sum
-// Following user requirements: extract data correctly and use for calculations
-// As per user request: do not set any default values for the calculated sum
-
-// Unified function to calculate item totals and overall sum
-// Following user requirements: extract data correctly and use for calculations
-// Optimized for performance
-const calculateItemTotal = (item) => {
-  // Parse values without setting defaults
-  let price = parseFloat(item.price);
-  let quantity = parseFloat(item.quantity);
-  const totalAmount = parseFloat(item.total);
-  
-  // Priority 1: Use total amount if available (highest accuracy from bill data)
-  // As per user request: "for sum, extract the total amount and consider it as sum"
-  // Also handle case when quantity is given but price per unit is missing - use total amount
-  if (totalAmount && totalAmount > 0) {
-    return Math.round(totalAmount * 100) / 100; // Faster than Number(totalAmount.toFixed(2))
-  }
-  
-  // Smart interpretation logic for cases like "P.out 30 × ₹2.00"
-  // If we have both price and quantity, but price < quantity, swap them
-  // This handles common OCR misinterpretations where price and quantity are swapped
-  if (price && quantity && price > 0 && quantity > 0) {
-    // If price is significantly smaller than quantity, they might be swapped
-    // Common case: "30 × ₹2.00" should be price=30, quantity=2
-    // More sophisticated logic: if the ratio suggests a swap is needed
-    if (price < quantity) {
-      // Check if swapping would make more sense based on common patterns
-      // If price is small (<=10) and quantity is larger (>=10), likely swapped
-      // Or if the ratio is very skewed (quantity/price > 5), likely swapped
-      if ((price <= 10 && quantity >= 10) || (quantity / price > 5)) {
-        // Swap price and quantity
-        const temp = price;
-        price = quantity;
-        quantity = temp;
-      }
-    }
-    
-    return Math.round((price * quantity) * 100) / 100; // Faster than Number((price * quantity).toFixed(2))
-  }
-  
-  // Priority 2: Calculate from price and quantity when total not available
-  if (price && price > 0) {
-    // If quantity is specified and valid, multiply price by quantity
-    if (quantity && quantity > 0) {
-      return Math.round((price * quantity) * 100) / 100; // Faster than Number((price * quantity).toFixed(2))
-    }
-    // If no valid quantity specified, use price as total
-    return Math.round(price * 100) / 100; // Faster than Number(price.toFixed(2))
-  }
-  
-  // No valid amount information available
-  return 0;
-};
-
-// Calculate total sum for all items in a bill
-// Using extracted bill data for accurate calculations
-// Optimized for performance
-const calculateBillSum = (items) => {
-  if (!items || !Array.isArray(items)) return 0;
-  
-  // Use a simple for loop for better performance than reduce
-  let sum = 0;
-  for (let i = 0; i < items.length; i++) {
-    sum += calculateItemTotal(items[i]);
-  }
-  return sum;
-};
-
 const updateHistory = (result) => {
   const historyItem = {
     id: Date.now(),
     date: new Date().toISOString(),
     fileName: currentFile?.name || 'Unknown',
-    // Use our enhanced validation logic with unified calculation functions
-    // Following user requirements: use extracted data for validating the bill
-    isValid: (() => {
-      // Calculate sum using our unified calculation function
-      // Extract data correctly from the bills and use for calculation purposes
-      const calculatedSum = calculateBillSum(result.items || []);
-      
-      // Perform validation checks using extracted bill data
-      // All items are now considered valid since the stationary items list is optional
-      const isItemValid = true; // result.isItemValid;
-      const billTotal = result.total || 0; // Extracted bill total from AI
-      const calculationDifference = Math.abs(calculatedSum - billTotal);
-      // Be more lenient with calculation validation for bills from legitimate businesses
-      // Allow up to 5 INR difference for businesses like nurseries that might have external notes
-      const isCalculationValid = calculationDifference <= (ROUNDING_TOLERANCE * 5);
-      
-      // Minimal bill info check
-      const hasMinimalBillInfo = (!result.billInfo || (
-        !result.billInfo.billNumber && 
-        !result.billInfo.date && 
-        !result.billInfo.shopName && 
-        !result.billInfo.shopAddress
-      )) && (!result.items || result.items.length === 0);
-      
-      // Final validation using extracted data for comprehensive bill validation
-      // Be more lenient for bills with items but calculation differences - flag for review instead of invalidating
-      const isValid = isItemValid && !hasMinimalBillInfo;
-      
-      // If calculation is invalid but items are valid, flag for manual review rather than marking as invalid
-      const shouldFlagForCalculationError = !isCalculationValid && isValid;
-      if (shouldFlagForCalculationError) {
-        // Add to flagged items for manual review
-        console.log('Bill has calculation differences but valid items, flagging for review');
-      }
-      
-      // Update validation - bills with calculation errors should be flagged, not marked valid or invalid
-      const finalIsValid = isValid && !shouldFlagForCalculationError;
-      return finalIsValid;
-    })(),
+    isValid: result.isItemValid && result.isCalculationValid,
     itemsCount: result.items?.length || 0,
-    validItems: result.items?.length || 0 // All items are now considered valid
+    validItems: result.items?.filter(it => ALLOWED_ITEMS.includes((it.name||'').toLowerCase().trim())).length || 0
   };
   
   validationHistory.unshift(historyItem);
@@ -541,69 +305,40 @@ const renderHistory = () => {
 
 // Remarks functionality
 const generateRemarks = (result) => {
-  // === ENHANCED DATA EXTRACTION AND CALCULATION LOGIC ===
-  // Following user requirements: extract data correctly and use for calculations
-  
-  // Use our unified calculation functions for consistency
-  // Extract data correctly from the bills and use for calculation purposes
-  const sum = calculateBillSum(result.items || []);
-  
-  // Flag items with missing amount information
-  // This helps identify data quality issues in the extracted bill data
-  const flaggedItems = (result.items || []).reduce((flags, item) => {
-    const price = parseFloat(item.price) || 0;
-    const totalAmount = parseFloat(item.total) || 0;
-    
-    // Flag items with no price or total information
-    // This identifies incomplete data extraction from bills
-    if (price <= 0 && totalAmount <= 0) {
-      flags.push({
-        ...item,
-        flag: true,
-        reason: 'Missing amount'
-      });
-    }
-    
-    return flags;
-  }, []);
-  
-  const skippedItems = []; // No items are currently skipped in our logic
+  // Fix the sum calculation to properly account for quantities
+  const sum = (result.items||[]).reduce((a,b) => {
+    const price = +b.price || 0;
+    const quantity = +b.quantity || 0; // Use 0 if no quantity specified
+    return a + (price * quantity);
+  }, 0);
   const validItemsCount = (result.items||[]).filter(it => 
     ALLOWED_ITEMS.includes((it.name||'').toLowerCase().trim())
   ).length;
   const invalidItemsCount = (result.items||[]).length - validItemsCount;
   const calculationDifference = Math.abs(sum - (result.total || 0));
   
-  // === CLEAR VALIDATION LOGIC ===
-  // 1. Item Validation
-  const isItemValid = result.isItemValid;
-  
-  // 2. Calculation Validation
-  const isCalculationValid = calculationDifference <= ROUNDING_TOLERANCE;
-  
-  // 3. Overall Status
-  const overallStatus = isItemValid && isCalculationValid ? 'Valid' : 'Invalid';
-  
   const remarks = {
-    overallStatus: overallStatus,
+    overallStatus: result.isItemValid && result.isCalculationValid ? 'Valid' : 'Invalid',
     itemAnalysis: {
       totalItems: result.items && result.items.length || 0,
-      validItems: result.items && result.items.length || 0, // All items are now considered valid since the stationary items list is optional
-      invalidItems: 0, // No items are invalid since the list is optional
-      invalidItemNames: [] // No invalid items since the list is optional
+      validItems: validItemsCount,
+      invalidItems: invalidItemsCount,
+      invalidItemNames: result.invalidItems || []
     },
     calculationAnalysis: {
       calculatedTotal: sum,
       billTotal: result.total || 0,
       difference: calculationDifference,
-      isWithinTolerance: isCalculationValid
+      isWithinTolerance: calculationDifference <= ROUNDING_TOLERANCE
     },
     recommendations: [],
     warnings: []
   };
   
   // Generate recommendations
-  // Removed recommendation to remove non-stationary items since the list is now optional
+  if (invalidItemsCount > 0) {
+    remarks.recommendations.push('Remove or replace ' + invalidItemsCount + ' non-stationary item(s)');
+  }
   
   if (!remarks.calculationAnalysis.isWithinTolerance) {
     remarks.recommendations.push('Verify calculation accuracy - difference of ₹' + calculationDifference.toFixed(2) + ' detected');
@@ -614,7 +349,9 @@ const generateRemarks = (result) => {
   }
   
   // Generate warnings
-  // Removed warning about non-stationary items since the list is now optional
+  if (invalidItemsCount > 0) {
+    remarks.warnings.push(invalidItemsCount + ' item(s) not eligible for reimbursement');
+  }
   
   if (!remarks.calculationAnalysis.isWithinTolerance) {
     remarks.warnings.push("Total calculation mismatch detected");
@@ -637,52 +374,16 @@ const generateRemarks = (result) => {
 };
 
 const generateCSV = (lastValidationResult) => {
-  let csvContent = "Name,Price,Quantity,Total\n";
+  let csvContent = "Name,Price,Quantity\n";
   (lastValidationResult.items || []).forEach((item) => {
-    csvContent += `${item.name},${item.price},${item.quantity},${item.total || ''}\n`;
+    csvContent += `${item.name},${item.price},${item.quantity}\n`;
   });
-  // Redesigned sum calculation: simply add all total amounts of each item
-  // When quantity is given but price per unit is missing, consider the total amount for the product
-  const { sum, flaggedItems, skippedItems } = (lastValidationResult.items || []).reduce((acc, item) => {
-    // Parse values
-    let price = parseFloat(item.price) || 0;
-    let quantity = parseFloat(item.quantity) || 0;
-    const totalAmount = parseFloat(item.total) || 0;
-    
-    // Smart interpretation logic for cases like "P.out 30 × ₹2.00"
-    if (price && quantity && price > 0 && quantity > 0) {
-      // If price is significantly smaller than quantity, they might be swapped
-      if (price < quantity) {
-        // Check if swapping would make more sense based on common patterns
-        if ((price <= 10 && quantity >= 10) || (quantity / price > 5)) {
-          // Swap price and quantity
-          const temp = price;
-          price = quantity;
-          quantity = temp;
-        }
-      }
-    }
-    
-    // If total amount is available, use it directly (handles case when quantity is given but price per unit is missing)
-    if (totalAmount > 0) {
-      acc.sum += Number(totalAmount.toFixed(2));
-    }
-    // If only price is available, calculate based on quantity
-    else if (price > 0) {
-      const calculatedTotal = quantity > 0 ? price * quantity : price;
-      acc.sum += Number(calculatedTotal.toFixed(2));
-    }
-    // If neither total amount nor price is available, flag the item
-    else {
-      acc.flaggedItems.push({
-        ...item,
-        flag: true,
-        reason: 'Missing amount'
-      });
-    }
-    
-    return acc;
-  }, { sum: 0, flaggedItems: [], skippedItems: [] });
+  // Add summary rows
+  const sum = (lastValidationResult.items || []).reduce((a, b) => {
+    const price = +b.price || 0;
+    const quantity = +b.quantity || 0; // Use 0 if no quantity specified
+    return a + (price * quantity);
+  }, 0);
   csvContent += "\nSummary\n";
   csvContent += "Calculated Sum,₹" + sum.toFixed(2) + ",\n";
   csvContent += "Bill Total,₹" + Number(lastValidationResult.total || 0).toFixed(2) + ",\n";
@@ -870,16 +571,6 @@ fileInput.addEventListener('change', handleFiles);
 // Extracted validation function
 async function validateBill() {
   if(!currentFile) return;
-  
-  console.log('Validating file:', currentFile.name, 'Type:', currentFile.type, 'Size:', currentFile.size);
-  
-  // Log file details for debugging
-  console.log('File details:', {
-    name: currentFile.name,
-    type: currentFile.type,
-    size: currentFile.size,
-    lastModified: currentFile.lastModified
-  });
 
   remarksSectionBeforeValidation.hidden = true; // Hide the remarks section
   progressBar.hidden = false; // Show progress bar
@@ -894,21 +585,9 @@ async function validateBill() {
   statusBadge.className = 'badge warnb pulse';
   statusBadge.innerHTML = '<i class="fas fa-spinner loading-spinner"></i> Processing';
 
-  // Compress image to reduce processing time (skip for PDF files)
-  let fileToProcess = currentFile;
-  if (currentFile.type !== 'application/pdf') {
-    try {
-      statusText.textContent = 'Compressing image…';
-      fileToProcess = await compressImage(currentFile, 0.7); // Increased compression to 0.7 for faster processing
-    } catch (err) {
-      console.warn('Image compression failed, using original file:', err);
-      // Continue with original file if compression fails
-    }
-  }
-
   let base64;
   try {
-    base64 = await fileToBase64(fileToProcess);
+    base64 = await fileToBase64(currentFile);
   } catch(err) {
     // Provide more specific error message for PDF files
     if (currentFile && currentFile.type === 'application/pdf') {
@@ -935,85 +614,32 @@ async function validateBill() {
     if (mimeType.toLowerCase().includes('pdf')) {
       mimeType = 'application/pdf';
     }
-    
-    console.log('Sending file with MIME type:', mimeType);
-    
-    // Add timeout to prevent hanging
-    // Increase timeout for larger files as gemini-2.5-flash model may take longer for complex extractions
-    const isPDF = currentFile && currentFile.type === 'application/pdf';
-    // Extended timeout for gemini-2.5-flash model which may take longer for larger files
-    // Increased from 90/60 seconds to 120/90 seconds to accommodate larger files
-    const timeoutDuration = isPDF ? 120000 : 90000; // 120 seconds for PDF, 90 for images
-    
-    // Add retry logic for PDF files to handle timeout issues
-    let retryCount = 0;
-    const maxRetries = isPDF ? 2 : 1; // Allow up to 2 retries for PDF files (increased for larger files)
-    
-    const makeRequest = async () => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
-      
-      try {
-        console.log('Sending request to API with MIME type:', mimeType, 'Base64 length:', base64?.length);
-        
-        // Update status for processing
-        if (isPDF) {
-          statusText.textContent = `Analyzing PDF with AI (attempt ${retryCount + 1}/${maxRetries}, may take up to 120 seconds for gemini-2.5-flash model)…`;
-        } else {
-          statusText.textContent = `Analyzing image with AI (attempt ${retryCount + 1}/${maxRetries}, may take up to 90 seconds for gemini-2.5-flash model)…`;
-        }
-        
-        const res = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: PROMPT },
-                { inlineData: { mimeType, data: base64 } }
-              ]
-            }]
-          }),
-          signal: controller.signal
-        });
-        
-        console.log('API response status:', res.status);
-        clearTimeout(timeoutId);
-        
-        const data = await res.json();
-        console.log('API response data:', JSON.stringify(data, null, 2));
-        if(data.error) throw new Error(data.error.message || 'API Error');
-        
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        if(!text) throw new Error('No content returned from AI');
-        
-        console.log('Raw AI response text:', text);
-        
-        const clean = text.startsWith('```') ? text.replace(/^```json|^```|\s*```$/g,'').trim() : text;
-        console.log('Cleaned AI response:', clean);
-        
-        return JSON.parse(clean);
-      } catch(err) {
-        clearTimeout(timeoutId);
-        // If it's a timeout and we have retries left, try again
-        if ((err.name === 'AbortError' || err.message.includes('aborted')) && retryCount < maxRetries - 1) {
-          retryCount++;
-          console.log(`Request timed out, retrying... (attempt ${retryCount + 1}/${maxRetries})`);
-          // Wait a bit before retrying
-          await new Promise(r => setTimeout(r, 2000));
-          return makeRequest();
-        }
-        throw err;
-      }
-    };
-    
-    const resultObj = await makeRequest();
-    console.log('Parsed result object:', JSON.stringify(resultObj, null, 2));
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: PROMPT },
+            { inlineData: { mimeType, data: base64 } }
+          ]
+        }]
+      })
+    });
+
+    const data = await res.json();
+    if(data.error) throw new Error(data.error.message || 'API Error');
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if(!text) throw new Error('No content returned from AI');
+
+    const clean = text.startsWith('```') ? text.replace(/^```json|^```|\s*```$/g,'').trim() : text;
+    const resultObj = JSON.parse(clean);
 
     setStep(3);
     updateProgress(75);
     statusText.textContent = 'Validating data…';
-    await new Promise(r => setTimeout(r, 50)); // Reduced from 300ms to 50ms for faster processing
+    await new Promise(r => setTimeout(r, 300));
 
     // Check if the file is not a valid bill
     if (!resultObj.isItemValid && !resultObj.isCalculationValid && 
@@ -1040,24 +666,6 @@ async function validateBill() {
     showToast('Validation complete!');
   } catch(err) {
     console.error(err);
-    
-    // Handle abort errors specifically
-    if (err.name === 'AbortError' || err.message.includes('aborted')) {
-      // Provide more specific error message for PDF files
-      if (currentFile && currentFile.type === 'application/pdf') {
-        showError('PDF processing timed out. Please try again with a smaller PDF file (under 10MB) or check your internet connection. Large PDFs may take up to 120 seconds to process with the gemini-2.5-flash model for enhanced data extraction.');
-      } else {
-        showError('Image processing timed out. Please try again with a smaller file (under 15MB) or check your internet connection. Image processing may take up to 90 seconds with the gemini-2.5-flash model for enhanced data extraction.');
-      }
-      return;
-    }
-    
-    // Handle network errors
-    if (err.message && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed to fetch'))) {
-      showError('Network error. Please check your internet connection and try again.');
-      return;
-    }
-    
     // Provide more specific error message for PDF files
     if (currentFile && currentFile.type === 'application/pdf') {
       showError(err.message || 'Processing failed. Please ensure your PDF file is not corrupted and try again.');
@@ -1069,24 +677,19 @@ async function validateBill() {
 
 function handleFiles(){
   const f = fileInput.files[0];
-  console.log('File selected:', f?.name, f?.type, f?.size);
   if(!f) return;
   
   // Check file type
   const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
   const fileType = f.type.toLowerCase();
   if (!validTypes.includes(fileType)) {
-    showError('Invalid file type. Please upload an image file (JPG/PNG) or a PDF file. Detected type: ' + fileType);
+    showError('Invalid file type. Please upload an image file (JPG/PNG) or a PDF file.');
     return;
   }
   
-  // Check file size (increased limits to support larger files)
-  // For PDF files, increased from 4MB to 10MB to support larger documents
-  // For image files, increased from 5MB to 15MB to support higher resolution images
-  const maxSize = f.type === 'application/pdf' ? 10 * 1024 * 1024 : 15 * 1024 * 1024; // 10MB for PDF, 15MB for images
-  if (f.size > maxSize) {
-    const recommendedSize = f.type === 'application/pdf' ? '10MB' : '15MB';
-    showError(`File too large. Please upload a ${f.type === 'application/pdf' ? 'PDF' : 'file'} smaller than ${recommendedSize}. Current size: ${humanSize(f.size)}`);
+  // Check file size (limit to 10MB instead of 5MB)
+  if (f.size > 10 * 1024 * 1024) {
+    showError('File too large. Please upload an image smaller than 10MB.');
     return;
   }
   
@@ -1098,7 +701,6 @@ function handleFiles(){
   
   // Handle PDF files differently from images
   if (fileType === 'application/pdf') {
-    console.log('Processing PDF file:', f.name, 'Size:', f.size, 'Type:', f.type);
     // For PDF files, show a PDF icon instead of trying to load as image
     thumb.classList.remove('loading');
     thumb.alt = 'PDF File';
@@ -1375,139 +977,6 @@ clearBtn.addEventListener('click', () => {
   }
 });
 
-// Reset button functionality
-resetBtn.addEventListener('click', () => {
-  // Confirm reset action
-  if (confirm('Are you sure you want to reset everything? This will clear the uploaded file, validation results, and all remarks.')) {
-    // Add a fade-out animation before clearing
-    if (!preview.hidden) {
-      preview.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-      preview.style.opacity = '0';
-      preview.style.transform = 'translateY(20px)';
-      
-      setTimeout(() => {
-        // Revoke the object URL to free memory
-        if (thumb.src && thumb.src.startsWith('blob:')) {
-          URL.revokeObjectURL(thumb.src);
-        }
-        
-        fileInput.value = '';
-        preview.hidden = true;
-        currentFile = null;
-        validateBtn.disabled = true;
-        validateBtn.style.display = 'none'; // Hide validate button
-        copyJsonBtn.disabled = true;
-        exportCsvBtn.disabled = true;
-        exportCsvBtn.style.display = 'none'; // Hide CSV button
-        exportCsvRemarks.style.display = 'none'; // Hide CSV remarks button
-        statusBox.hidden = true;
-        progressBar.hidden = true;
-        resultBox.hidden = true;
-        remarksSectionBeforeValidation.hidden = true; // Hide remarks section
-        remarksSection.hidden = true;
-        
-        // Hide bill details section
-        const billDetailsSection = document.getElementById('billDetailsSection');
-        if (billDetailsSection) {
-          billDetailsSection.hidden = true;
-        }
-        
-        customRemarks = ''; // Clear custom remarks
-        if (customRemarksInput) customRemarksInput.value = ''; // Clear input field
-        if (remarksStatusBeforeValidation) remarksStatusBeforeValidation.textContent = ''; // Clear remarks status
-        if (remarksStatus) remarksStatus.textContent = ''; // Clear results remarks status
-        lastJsonText = null;
-        lastValidationResult = null; // Clear last result
-        
-        // Clear thumbnail
-        thumb.src = '';
-        thumb.alt = '';
-        if (fileName) fileName.textContent = '—';
-        if (fileInfo) fileInfo.textContent = '—';
-        
-        // Clear file type if it exists
-        const fileTypeEl = document.getElementById('fileType');
-        if (fileTypeEl) {
-          fileTypeEl.textContent = '—';
-        }
-        
-        // Reset preview styles
-        preview.style.opacity = '';
-        preview.style.transform = '';
-        preview.style.transition = '';
-        
-        // Reset status elements
-        if (statusBadge) {
-          statusBadge.className = 'badge warnb';
-          statusBadge.innerHTML = '<i class="fas fa-clock"></i> Waiting';
-        }
-        if (statusText) statusText.textContent = 'Add an image to begin.';
-        
-        // Reset timeline
-        document.querySelectorAll('.step').forEach(step => {
-          step.classList.remove('active', 'done');
-        });
-        
-        // Show upload instructions again
-        document.getElementById('uploadTitle').textContent = 'Drag & drop or click to upload';
-        
-        showToast('All data has been reset');
-      }, 300);
-    } else {
-      // Even if no preview, still reset everything
-      fileInput.value = '';
-      currentFile = null;
-      validateBtn.disabled = true;
-      validateBtn.style.display = 'none'; // Hide validate button
-      copyJsonBtn.disabled = true;
-      exportCsvBtn.disabled = true;
-      exportCsvBtn.style.display = 'none'; // Hide CSV button
-      exportCsvRemarks.style.display = 'none'; // Hide CSV remarks button
-      statusBox.hidden = true;
-      progressBar.hidden = true;
-      resultBox.hidden = true;
-      remarksSectionBeforeValidation.hidden = true; // Hide remarks section
-      remarksSection.hidden = true;
-      
-      // Hide bill details section
-      const billDetailsSection = document.getElementById('billDetailsSection');
-      if (billDetailsSection) {
-        billDetailsSection.hidden = true;
-      }
-      
-      customRemarks = ''; // Clear custom remarks
-      if (customRemarksInput) customRemarksInput.value = ''; // Clear input field
-      if (remarksStatusBeforeValidation) remarksStatusBeforeValidation.textContent = ''; // Clear remarks status
-      if (remarksStatus) remarksStatus.textContent = ''; // Clear results remarks status
-      lastJsonText = null;
-      lastValidationResult = null; // Clear last result
-      
-      // Clear file type if it exists
-      const fileTypeEl = document.getElementById('fileType');
-      if (fileTypeEl) {
-        fileTypeEl.textContent = '—';
-      }
-      
-      // Reset status elements
-      if (statusBadge) {
-        statusBadge.className = 'badge warnb';
-        statusBadge.innerHTML = '<i class="fas fa-clock"></i> Waiting';
-      }
-      if (statusText) statusText.textContent = 'Add an image to begin.';
-      
-      // Reset timeline
-      document.querySelectorAll('.step').forEach(step => {
-        step.classList.remove('active', 'done');
-      });
-      
-      // Show upload instructions again
-      document.getElementById('uploadTitle').textContent = 'Drag & drop or click to upload';
-      
-      showToast('All data has been reset');
-    }
-  }
-});
-
 // Modal handling
 policyBtn.addEventListener('click', () => {
   policyModal.style.display = 'block';
@@ -1576,27 +1045,10 @@ downloadRemarks.addEventListener('click', () => {
       totalItems: (lastValidationResult.items || []).length,
       billTotal: lastValidationResult.total || 0,
       handwrittenNotes: lastValidationResult.handwrittenNotes || [],
-      calculatedSum: (lastValidationResult.items || []).reduce((acc, item) => {
-        // Parse values
-        const price = parseFloat(item.price) || 0;
-        const quantity = parseFloat(item.quantity) || 0;
-        const totalAmount = parseFloat(item.total) || 0;
-        
-        // If total amount is available, use it directly
-        if (totalAmount > 0) {
-          acc += Number(totalAmount.toFixed(2));
-        }
-        // If only price is available, calculate based on quantity
-        else if (price > 0) {
-          const calculatedTotal = quantity > 0 ? price * quantity : price;
-          acc += Number(calculatedTotal.toFixed(2));
-        }
-        // If neither total amount nor price is available, skip the item
-        else {
-          // Item skipped, but we don't need to track it here
-        }
-        
-        return acc;
+      calculatedSum: (lastValidationResult.items || []).reduce((a,b) => {
+        const price = +b.price || 0;
+        const quantity = +b.quantity || 0; // Use 0 if no quantity specified
+        return a + (price * quantity);
       }, 0)
     } : null,
     ...currentRemarks,
@@ -1655,33 +1107,17 @@ exportCsvBtn.addEventListener('click', () => {
   // Add items to CSV
   csvContent += "Item,Quantity,Price (₹),Status\n";
   (lastValidationResult.items || []).forEach(item => {
-    // All items are now considered allowed since the stationary items list is optional
-    csvContent += "" + (item.name || '-') + "," + (item.quantity || '-') + "," + Number(item.price || 0).toFixed(2) + ",Allowed\n";
+    const allowed = ALLOWED_ITEMS.includes((item.name || '').toLowerCase().trim());
+    const status = allowed ? "Allowed" : "Disallowed";
+    csvContent += "" + (item.name || '-') + "," + (item.quantity || '-') + "," + Number(item.price || 0).toFixed(2) + "," + status + "\n";
   });
   
-  // Redesigned sum calculation: simply add all total amounts of each item
-  const { sum } = (lastValidationResult.items || []).reduce((acc, item) => {
-    // Parse values
-    const price = parseFloat(item.price) || 0;
-    const quantity = parseFloat(item.quantity) || 0;
-    const totalAmount = parseFloat(item.total) || 0;
-    
-    // If total amount is available, use it directly
-    if (totalAmount > 0) {
-      acc.sum += Number(totalAmount.toFixed(2));
-    }
-    // If only price is available, calculate based on quantity
-    else if (price > 0) {
-      const calculatedTotal = quantity > 0 ? price * quantity : price;
-      acc.sum += Number(calculatedTotal.toFixed(2));
-    }
-    // If neither total amount nor price is available, skip the item
-    else {
-      // Item skipped, but we don't need to track it here
-    }
-    
-    return acc;
-  }, { sum: 0 });
+  // Add summary rows
+  const sum = (lastValidationResult.items || []).reduce((a, b) => {
+    const price = +b.price || 0;
+    const quantity = +b.quantity || 0; // Use 0 if no quantity specified
+    return a + (price * quantity);
+  }, 0);
   csvContent += "\nSummary\n";
   csvContent += "Calculated Sum,₹" + sum.toFixed(2) + ",\n";
   csvContent += "Bill Total,₹" + Number(lastValidationResult.total || 0).toFixed(2) + ",\n";
@@ -1786,88 +1222,17 @@ exportCsvRemarks.addEventListener('click', () => {
   URL.revokeObjectURL(url);
   
   showToast('Remarks CSV exported');
-    csvContent += "\n";
-  }
-  
-  // Add item analysis
-  csvContent += "Item Analysis\n";
-  csvContent += "Total Items," + (currentRemarks.itemAnalysis.totalItems || 0) + "\n";
-  csvContent += "Valid Items," + (currentRemarks.itemAnalysis.validItems || 0) + "\n";
-  csvContent += "Invalid Items," + (currentRemarks.itemAnalysis.invalidItems || 0) + "\n\n";
-  
-  // Add calculation analysis
-  csvContent += "Calculation Analysis\n";
-  csvContent += "Bill Total,₹" + (currentRemarks.calculationAnalysis.billTotal || 0).toFixed(2) + "\n";
-  csvContent += "Calculated Total,₹" + (currentRemarks.calculationAnalysis.calculatedTotal || 0).toFixed(2) + "\n";
-  csvContent += "Difference,₹" + (currentRemarks.calculationAnalysis.difference || 0).toFixed(2) + "\n\n";
-  
-  // Add recommendations
-  csvContent += "Recommendations\n";
-  if (currentRemarks.recommendations.length > 0) {
-    currentRemarks.recommendations.forEach(rec => {
-      csvContent += "," + rec + "\n";
-    });
-  } else {
-    csvContent += ",No recommendations. Bill appears valid.\n";
-  }
-  csvContent += "\n";
-  
-  // Add warnings
-  csvContent += "Warnings\n";
-  if (currentRemarks.warnings.length > 0) {
-    currentRemarks.warnings.forEach(warn => {
-      csvContent += "," + warn + "\n";
-    });
-  } else {
-    csvContent += ",No warnings detected.\n";
-  }
-  csvContent += "\n";
-  
-  // Add custom remarks
-  if (customRemarks) {
-    csvContent += "Your Remarks\n";
-    csvContent += "," + customRemarks.replace(/\n/g, ' | ') + "\n";
-  }
-  
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = "bill-remarks-" + Date.now() + ".csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  
-  showToast('Remarks CSV exported');
 });
 
 // Print remarks
 printRemarks.addEventListener('click', () => {
   if (!currentRemarks) return;
   
-  const { sum } = lastValidationResult ? (lastValidationResult.items||[]).reduce((acc, item) => {
-    // Parse values
-    const price = parseFloat(item.price) || 0;
-    const quantity = parseFloat(item.quantity) || 0;
-    const totalAmount = parseFloat(item.total) || 0;
-    
-    // If total amount is available, use it directly
-    if (totalAmount > 0) {
-      acc.sum += Number(totalAmount.toFixed(2));
-    }
-    // If only price is available, calculate based on quantity
-    else if (price > 0) {
-      const calculatedTotal = quantity > 0 ? price * quantity : price;
-      acc.sum += Number(calculatedTotal.toFixed(2));
-    }
-    // If neither total amount nor price is available, skip the item
-    else {
-      // Item skipped, but we don't need to track it here
-    }
-    
-    return acc;
-  }, { sum: 0 }) : { sum: 0 };
+  const sum = lastValidationResult ? (lastValidationResult.items||[]).reduce((a,b) => {
+    const price = +b.price || 0;
+    const quantity = +b.quantity || 0; // Use 0 if no quantity specified
+    return a + (price * quantity);
+  }, 0) : 0;
   
   const printWindow = window.open('', '_blank');
   printWindow.document.write(`
@@ -2176,31 +1541,16 @@ function showError(msg){
   verdictBadge.innerHTML = '<i class="fas fa-times"></i> Error';
   summaryEl.textContent = msg;
   
-  // Add error message element with enhanced visibility
+  // Add error message element
   const errorEl = document.createElement('div');
   errorEl.className = 'error-message fade-in-element';
   errorEl.innerHTML = `
-    <h4><i class="fas fa-exclamation-triangle"></i> VALIDATION ERROR - ACTION REQUIRED</h4>
+    <h4><i class="fas fa-exclamation-circle"></i> Validation Error</h4>
     <p>${msg}</p>
     <p class="small">Please check your file and try again. Ensure it's a clear image or PDF of a stationary bill.</p>
   `;
   notes.innerHTML = '';
   notes.appendChild(errorEl);
-  
-  // Add flagged item for manual validation with enhanced visibility
-  const flaggedItemEl = document.createElement('div');
-  flaggedItemEl.className = 'flagged-items-note';
-  flaggedItemEl.innerHTML = `
-    <div class="flagged-items-section">
-      <h4><i class="fas fa-exclamation-triangle"></i> FLAGGED ITEMS - MANUAL VALIDATION REQUIRED</h4>
-      <ul>
-        <li><i class="fas fa-exclamation-circle"></i> <strong>Invalid Bill</strong> - Manual validation required</li>
-      </ul>
-    </div>
-  `;
-  // Add visual highlight effect
-  flaggedItemEl.style.animation = 'pulseError 1s infinite';
-  notes.appendChild(flaggedItemEl);
   
   // Hide bill details section on error
   const billDetailsSection = document.getElementById('billDetailsSection');
@@ -2215,125 +1565,31 @@ function showError(msg){
   exportCsvBtn.style.display = 'none'; // Hide CSV button
   exportCsvRemarks.style.display = 'none'; // Hide CSV remarks button
   customRemarks = ''; // Clear custom remarks
-  if (customRemarksInput) customRemarksInput.value = ''; // Clear input field
-  if (remarksStatusBeforeValidation) remarksStatusBeforeValidation.textContent = ''; // Clear remarks status
-  if (remarksStatus) remarksStatus.textContent = ''; // Clear results remarks status
+  customRemarksInput.value = ''; // Clear input field
+  remarksStatusBeforeValidation.textContent = ''; // Clear remarks status
+  remarksStatus.textContent = ''; // Clear results remarks status
   lastJsonText = null;
   lastValidationResult = null; // Clear last result
   validateBtn.disabled = false;
-  if (statusBadge) {
-    statusBadge.className = 'badge bad';
-    statusBadge.innerHTML = '<i class="fas fa-times"></i> Error';
-  }
+  statusBadge.className = 'badge bad';
+  statusBadge.innerHTML = '<i class="fas fa-times"></i> Error';
 }
 
 // Enhanced results display to show all bill details
 function showResults(r){
-  console.log('Showing results:', JSON.stringify(r, null, 2));
   // Add custom remarks to the result object
   r.customRemarks = customRemarks;
   
   lastValidationResult = r; // Store the result for CSV export
-  
-  // Check if bill has minimal information - flag online payment screenshots
-  // A bill is considered to have minimal info if it lacks key bill information AND has no items
-  // But don't flag bills from legitimate businesses like nurseries just because they have external notes
-  hasMinimalBillInfo = (!r.billInfo || (
-    !r.billInfo.billNumber && 
-    !r.billInfo.date && 
-    !r.billInfo.shopName && 
-    !r.billInfo.shopAddress
-  )) && (!r.items || r.items.length === 0) && 
-  // Additional check: if there are items but no bill info, still consider it valid if items exist
-  !(r.items && r.items.length > 0);
-  
-  // Calculation functions are now defined in the global scope
-  
-  // === ENHANCED DATA EXTRACTION AND CALCULATION LOGIC ===
-  // Following user requirements: extract data correctly and use for calculations
-  console.log('Calculating sum for items:', r.items);
-  
-  // Use our unified calculation functions for consistency
-  // Extract data correctly from the bills and use for calculation purposes
-  const sum = calculateBillSum(r.items || []);
-  console.log('Final calculated sum (using extracted bill data):', sum);
-  
-  // Flag items with missing amount information
-  // This helps identify data quality issues in the extracted bill data
-  const flaggedItems = (r.items || []).reduce((flags, item) => {
-    const price = parseFloat(item.price) || 0;
-    const totalAmount = parseFloat(item.total) || 0;
-    
-    // Flag items with no price or total information
-    // This identifies incomplete data extraction from bills
-    if (price <= 0 && totalAmount <= 0) {
-      flags.push({
-        ...item,
-        flag: true,
-        reason: 'Missing amount'
-      });
-    }
-    
-    return flags;
-  }, hasMinimalBillInfo ? [{ name: 'No Bill Information', reason: 'Online payment screenshot or missing bill details' }] : []);
-  
-  // Check for poor quality handwritten text extraction
-  // If handwritten notes exist but are very short or contain mostly non-alphanumeric characters,
-  // flag the bill for manual review instead of marking it as invalid
-  if (r.handwrittenNotes && r.handwrittenNotes.length > 0) {
-    const allHandwrittenText = r.handwrittenNotes.join(' ');
-    
-    // Check if the extracted text is of poor quality
-    // Criteria: less than 10 characters or less than 30% alphanumeric characters
-    if (allHandwrittenText.length < 10 || 
-        (allHandwrittenText.length > 0 && 
-         (allHandwrittenText.replace(/[^a-zA-Z0-9\s]/g, '').length / allHandwrittenText.length) < 0.3)) {
-      flaggedItems.push({
-        name: 'Poor Quality Handwritten Text',
-        reason: 'Handwritten text is not clearly visible or poorly extracted'
-      });
-    }
-  }
-  
-  // Additional check: If there are significant calculation errors, flag the bill for review
-  // But don't automatically invalidate it - let the user decide
-  // Use the same extended tolerance as in the main validation logic
-  const calcDifference = Math.abs(sum - (r.total || 0));
-  const hasSignificantCalculationError = calcDifference > (ROUNDING_TOLERANCE * 5);
-  
-  // If there are significant calculation errors, add a flagged item
-  if (hasSignificantCalculationError && !hasMinimalBillInfo) {
-    flaggedItems.push({
-      name: 'Calculation Error',
-      reason: `Total mismatch: Calculated ₹${sum.toFixed(2)} vs Bill Total ₹${(r.total || 0).toFixed(2)}`
-    });
-  }
-  
-  // Check if the AI response indicates issues with handwritten text extraction
-  // This happens when the AI says it found handwritten notes but the extraction is poor
-  if (r.handwrittenNotes && r.handwrittenNotes.length > 0) {
-    // Check for common indicators of poor extraction quality
-    const allNotes = r.handwrittenNotes.join(' ').toLowerCase();
-    const poorExtractionIndicators = [
-      'unclear', 'illegible', 'blurry', 'faint', 'partial', 'incomplete',
-      'poor quality', 'low quality', 'difficult to read', 'hard to read'
-    ];
-    
-    const hasPoorExtraction = poorExtractionIndicators.some(indicator => 
-      allNotes.includes(indicator));
-    
-    if (hasPoorExtraction) {
-      flaggedItems.push({
-        name: 'Poor Handwritten Text Quality',
-        reason: 'AI detected issues with handwritten text clarity'
-      });
-    }
-  }
-  
-  console.log('Flagged items (data quality issues):', flaggedItems.length);
-  const skippedItems = []; // No items are currently skipped in our logic
-  // All items are now considered valid since the stationary items list is optional
-  const validItemsCount = r.items?.length || 0;
+  // Fix the sum calculation to properly account for quantities
+  const sum = (r.items||[]).reduce((a,b) => {
+    const price = +b.price || 0;
+    const quantity = +b.quantity || 0; // Use 0 if no quantity specified
+    return a + (price * quantity);
+  }, 0);
+  const validItemsCount = (r.items||[]).filter(it => 
+    ALLOWED_ITEMS.includes((it.name||'').toLowerCase().trim())
+  ).length;
   
   // Populate bill details section
   const billDetailsSection = document.getElementById('billDetailsSection');
@@ -2345,19 +1601,18 @@ function showResults(r){
   const handwrittenNotesContent = document.getElementById('handwrittenNotesContent');
   
   if (billDetailsSection) {
-    if (totalItemsValue) totalItemsValue.textContent = (r.items||[]).length;
-    if (billTotalValue) billTotalValue.textContent = `₹${Number(r.total||0).toFixed(2)}`;
-    if (calculatedSumValue) calculatedSumValue.textContent = `₹${Number(sum).toFixed(2)}`;
+    totalItemsValue.textContent = (r.items||[]).length;
+    billTotalValue.textContent = `₹${Number(r.total||0).toFixed(2)}`;
+    calculatedSumValue.textContent = `₹${sum.toFixed(2)}`;
     
     const difference = Math.abs(sum - (r.total || 0));
-    console.log('Calculated sum:', sum, 'Bill total:', r.total, 'Difference:', difference);
-    if (differenceValue) differenceValue.textContent = `₹${Number(difference).toFixed(2)}`;
+    differenceValue.textContent = `₹${difference.toFixed(2)}`;
     
     // Remove any existing error class
-    if (differenceValue) differenceValue.classList.remove('error');
+    differenceValue.classList.remove('error');
     
     // Add error styling if difference exceeds tolerance
-    if (difference > 1.00 && differenceValue) {
+    if (difference > 1.00) {
       differenceValue.classList.add('error');
       // Add pulse animation for error values
       differenceValue.classList.add('pulseError');
@@ -2365,51 +1620,15 @@ function showResults(r){
     
     // Handle handwritten notes
     if (r.handwrittenNotes && r.handwrittenNotes.length > 0) {
-      if (handwrittenNotes) handwrittenNotes.hidden = false;
-      if (handwrittenNotesContent) handwrittenNotesContent.textContent = r.handwrittenNotes.join('; ');
+      handwrittenNotes.hidden = false;
+      handwrittenNotesContent.textContent = r.handwrittenNotes.join('; ');
     } else {
-      if (handwrittenNotes) handwrittenNotes.hidden = true;
+      handwrittenNotes.hidden = true;
     }
     
     billDetailsSection.hidden = false;
     // Add fade-in animation to bill details section
     billDetailsSection.classList.add('fade-in-element');
-  }
-  
-  // Display flagged items if any - Enhanced visibility
-  if (flaggedItems.length > 0) {
-    let flaggedItemsHTML = '<div class="flagged-items-section"><h4><i class="fas fa-exclamation-triangle"></i> FLAGGED ITEMS - ATTENTION REQUIRED</h4><ul>';
-    flaggedItems.forEach(item => {
-      if (item.reason === 'Online payment screenshot or missing bill details') {
-        flaggedItemsHTML += `<li><i class="fas fa-exclamation-circle"></i> <strong>${escapeHTML(item.name || 'Unknown Item')}</strong> - ${item.reason}</li>`;
-      } else {
-        flaggedItemsHTML += `<li><i class="fas fa-exclamation-circle"></i> ${escapeHTML(item.name || 'Unknown Item')} - ₹${Number(item.total || 0).toFixed(2)} (${item.reason})</li>`;
-      }
-    });
-    flaggedItemsHTML += '</ul></div>';
-    
-    // Add to notes section with enhanced visibility
-    const flaggedItemsEl = document.createElement('div');
-    flaggedItemsEl.className = 'flagged-items-note';
-    flaggedItemsEl.innerHTML = flaggedItemsHTML;
-    // Add a visual highlight effect
-    flaggedItemsEl.style.animation = 'pulseError 1s infinite';
-    notes.appendChild(flaggedItemsEl);
-  }
-  
-  // Display skipped items if any
-  if (skippedItems.length > 0) {
-    let skippedItemsHTML = '<div class="skipped-items-section"><h4><i class="fas fa-exclamation-triangle"></i> Skipped Items (Incomplete Data)</h4><ul>';
-    skippedItems.forEach(item => {
-      skippedItemsHTML += `<li>${escapeHTML(item.name || 'Unknown Item')} - ${item.reason}</li>`;
-    });
-    skippedItemsHTML += '</ul></div>';
-    
-    // Add to notes section
-    const skippedItemsEl = document.createElement('div');
-    skippedItemsEl.className = 'skipped-items-note';
-    skippedItemsEl.innerHTML = skippedItemsHTML;
-    notes.appendChild(skippedItemsEl);
   }
   
   // Remove any existing comprehensive bill info to prevent duplication
@@ -2488,115 +1707,31 @@ function showResults(r){
   
   itemsBody.innerHTML = '';
   (r.items||[]).forEach(it => {
-    // Apply the same smart interpretation logic for display
-    let displayPrice = parseFloat(it.price) || 0;
-    let displayQuantity = parseFloat(it.quantity) || 0;
-    
-    // Apply the same smart interpretation logic for display purposes
-    if (displayPrice && displayQuantity && displayPrice > 0 && displayQuantity > 0) {
-      // If price is significantly smaller than quantity, they might be swapped
-      if (displayPrice < displayQuantity) {
-        // Check if swapping would make more sense based on common patterns
-        if ((displayPrice <= 10 && displayQuantity >= 10) || (displayQuantity / displayPrice > 5)) {
-          // Swap for display purposes
-          const temp = displayPrice;
-          displayPrice = displayQuantity;
-          displayQuantity = temp;
-        }
-      }
-    }
-    
+    const allowed = ALLOWED_ITEMS.includes((it.name||'').toLowerCase().trim());
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHTML(it.name||'-')}</td>
-      <td>${displayQuantity ? `${displayQuantity} × ` : ''}₹${Number(displayPrice||0).toFixed(2)}</td>
-      <td><span class="badge ok"><i class="fas fa-check"></i> Allowed</span></td>
+      <td>${it.quantity ? `${it.quantity} × ` : ''}₹${Number(it.price||0).toFixed(2)}</td>
+      <td>${allowed ? 
+        '<span class="badge ok"><i class="fas fa-check"></i> Allowed</span>' : 
+        '<span class="badge bad"><i class="fas fa-times"></i> Disallowed</span>'}</td>
     `;
     itemsBody.appendChild(tr);
   });
-  if (sumCell) sumCell.textContent = sum.toFixed(2);
-  if (billTotalCell) billTotalCell.textContent = Number(r.total||0).toFixed(2);
+  sumCell.textContent = sum.toFixed(2);
+  billTotalCell.textContent = Number(r.total||0).toFixed(2);
   tableWrap.hidden = false;
   statsGrid.hidden = false;
   
-  if (itemsCount) itemsCount.textContent = (r.items||[]).length;
-  if (validItems) validItems.textContent = validItemsCount;
+  itemsCount.textContent = (r.items||[]).length;
+  validItems.textContent = validItemsCount;
 
-  // === ENHANCED VALIDATION LOGIC USING EXTRACTED BILL DATA ===
-  // Following user requirements: use extracted data for validating the bill
-  
-  // 1. Item Validation: All items are now considered valid since the stationary items list is optional
-  // Using AI-extracted isItemValid flag but overriding to true for all items
-  const isItemValid = true; // r.isItemValid;
-  
-  // 2. Calculation Validation: Compare our calculated sum with the bill total
-  // Using extracted bill data for accurate calculations as per user requirements
-  const calculatedSum = calculateBillSum(r.items || []);
-  const billTotal = r.total || 0; // Extracted bill total from AI
-  const calculationDifference = Math.abs(calculatedSum - billTotal);
-  // Be more lenient with calculation validation for bills from legitimate businesses
-  // Allow up to 5 INR difference for businesses like nurseries that might have external notes
-  const isCalculationValid = calculationDifference <= (ROUNDING_TOLERANCE * 5);
-  
-  // Final validation using extracted data for comprehensive bill validation
-  // Be more lenient for bills with items but calculation differences - flag for review instead of invalidating
-  // Also be lenient with bills that have flagged items due to poor handwritten text quality
-  const isValid = isItemValid && !hasMinimalBillInfo;
-  
-  // If calculation is invalid but items are valid, flag for manual review rather than marking as invalid
-  // Special case: If difference is zero, don't flag even if isCalculationValid is false due to floating point issues
-  const shouldFlagForCalculationError = !isCalculationValid && isValid && calculationDifference > 0;
-  if (shouldFlagForCalculationError) {
-    // Add to flagged items for manual review
-    console.log('Bill has calculation differences but valid items, flagging for review');
-    // Add calculation error to flagged items
-    flaggedItems.push({
-      name: 'Calculation Error',
-      reason: `Total mismatch: Calculated ₹${calculatedSum.toFixed(2)} vs Bill Total ₹${billTotal.toFixed(2)}`
-    });
-  }
-  
-  // If the bill has flagged items due to poor handwritten text quality, still consider it valid
-  // but flag it for manual review
-  const hasPoorHandwrittenQuality = flaggedItems.some(item => 
-    item.name.includes('Poor Quality Handwritten Text') || 
-    item.name.includes('Poor Handwritten Text Quality'));
-  
-  // Update validation - bills with calculation errors should be flagged, not marked valid or invalid
-  // Special case: If difference is zero, the bill is valid regardless of other factors
-  const finalIsValid = (isValid && !shouldFlagForCalculationError && !hasPoorHandwrittenQuality) || (calculationDifference === 0);
-  
-  // Check if the bill should be flagged
-  // Only flag if there are actual validation issues
-  // Special case: If difference is zero, never flag the bill
-  const shouldBeFlagged = (shouldFlagForCalculationError || hasPoorHandwrittenQuality || hasMinimalBillInfo) && (calculationDifference > 0);
-  
-  // Log validation details for debugging
-  console.log('=== VALIDATION RESULTS (Using Extracted Bill Data) ===');
-  console.log('Item Validation (AI extracted):', isItemValid);
-  console.log('Calculation Validation (using extracted data):', isCalculationValid, '(Calculated Sum: ₹' + calculatedSum.toFixed(2) + ', Bill Total: ₹' + billTotal.toFixed(2) + ', Difference: ₹' + calculationDifference.toFixed(2) + ', Tolerance: ₹' + ROUNDING_TOLERANCE + ')');
-  console.log('Minimal Bill Info Check:', hasMinimalBillInfo);
-  console.log('Final Validation Result:', isValid ? 'VALID' : 'INVALID');
-  if (verdictBadge) {
-    // If the bill should be flagged, show Flag status instead of Valid/Invalid
-    if (shouldBeFlagged) {
-      verdictBadge.className = 'badge warnb';
-      verdictBadge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Flag';
-    } else {
-      verdictBadge.className = `badge ${finalIsValid ? 'ok' : 'bad'}`;
-      verdictBadge.innerHTML = finalIsValid ? 
-        '<i class="fas fa-check"></i> Valid' : 
-        '<i class="fas fa-times"></i> Invalid';
-    }
-  }
-  if (summaryEl) {
-    // If the bill should be flagged, show the flag message
-    if (shouldBeFlagged) {
-      summaryEl.textContent = 'FLAG - MANUAL REVIEW REQUIRED';
-    } else {
-      summaryEl.textContent = r.summary || (finalIsValid ? 'Bill is VALID!' : 'Bill is INVALID');
-    }
-  }
+  const isValid = r.isItemValid && r.isCalculationValid;
+  verdictBadge.className = `badge ${isValid ? 'ok' : 'bad'}`;
+  verdictBadge.innerHTML = isValid ? 
+    '<i class="fas fa-check-circle"></i> Valid' : 
+    '<i class="fas fa-times-circle"></i> Invalid';
+  summaryEl.textContent = r.summary || (isValid ? 'Bill is VALID!' : 'Bill is INVALID');
 
   lastJsonText = JSON.stringify(r, null, 2);
 
@@ -2608,39 +1743,17 @@ function showResults(r){
   if(customRemarks) extra.push(`<b>Your remarks</b>: ${escapeHTML(customRemarks)}`);
   
   // Add success message if validation is valid
-  if (finalIsValid) {
+  if (isValid) {
     const successEl = document.createElement('div');
     successEl.className = 'success-message fade-in-element';
     successEl.innerHTML = `
-      <h4><i class="fas fa-check"></i> Validation Successful</h4>
+      <h4><i class="fas fa-check-circle"></i> Validation Successful</h4>
       <p>This bill has passed all validation checks and is eligible for reimbursement.</p>
     `;
     notes.innerHTML = '';
     notes.appendChild(successEl);
   } else {
-    // When a bill is flagged, display only "Flag - Manual review required" instead of validation errors
-    if (flaggedItems.length > 0 || hasMinimalBillInfo || hasPoorHandwrittenQuality) {
-      // Clear any existing content
-      notes.innerHTML = '';
-      
-      // Add flagged item for manual validation with enhanced visibility
-      const flaggedItemEl = document.createElement('div');
-      flaggedItemEl.className = 'flagged-items-note';
-      flaggedItemEl.innerHTML = `
-        <div class="flagged-items-section">
-          <h4><i class="fas fa-exclamation-triangle"></i> FLAG - MANUAL REVIEW REQUIRED</h4>
-          <ul>
-            <li><i class="fas fa-exclamation-circle"></i> <strong>Flagged Bill</strong> - Manual review required</li>
-          </ul>
-        </div>
-      `;
-      // Add visual highlight effect
-      flaggedItemEl.style.animation = 'pulseError 1s infinite';
-      notes.appendChild(flaggedItemEl);
-    } else {
-      // For other validation errors, show the standard error information
-      notes.innerHTML = extra.length ? `<div class="small">${extra.join('<br/>')}</div>` : '';
-    }
+    notes.innerHTML = extra.length ? `<div class="small">${extra.join('<br/>')}</div>` : '';
   }
 
   resultBox.hidden = false;
@@ -2659,7 +1772,7 @@ function showResults(r){
   // Add to history
   updateHistory(r);
   
-  if(finalIsValid) fireConfetti();
+  if(isValid) fireConfetti();
 }
 
 copyJsonBtn.addEventListener('click', async () => {
@@ -2749,16 +1862,10 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Clear history functionality
-const clearHistoryBtn = document.getElementById('clearHistoryBtn');
-if (clearHistoryBtn) {
-  clearHistoryBtn.addEventListener('click', () => {
-    if (confirm('Are you sure you want to clear all validation history?')) {
-      validationHistory = [];
-      localStorage.removeItem('billValidatorHistory');
-      renderHistory();
-      showToast('History cleared');
-    }
-  });
-}
-
+// Show tutorial again if user presses 'H' key
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() === 'h') {
+    tutorialCard.style.display = 'block';
+    populateShortcuts(); // Ensure shortcuts are populated
+  }
+});

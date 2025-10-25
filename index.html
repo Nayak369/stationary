@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>✨ AI Stationery Bill Validator</title>
+  <title>AI Stationery Bill Validator</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
   <meta name="color-scheme" content="light dark"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -20,7 +20,7 @@
         <i class="fas fa-receipt"></i> AI Stationery Bill Validator
       </div>
       <div class="header-actions">
-        <p class="subtitle">Upload any bill image. AI will verify stationery eligibility & calculation accuracy.</p>
+        <p class="subtitle">Upload any bill image. AI will verify stationary eligibility & calculation accuracy.</p>
         <button class="btn ghost small" id="themeToggle">
           <i class="fas fa-moon"></i> Dark Mode
         </button>
@@ -41,7 +41,7 @@
             <div class="step-number">1</div>
             <div class="step-content">
               <h3>Upload Bill</h3>
-              <p>Drag & drop or click to upload a clear image of your stationery bill</p>
+              <p>Drag & drop or click to upload a clear image or PDF of your stationary bill</p>
             </div>
           </div>
           <div class="tutorial-step">
@@ -82,7 +82,7 @@
           <h3><i class="fas fa-star"></i> New Features</h3>
           <ul class="features-list">
             <li><i class="fas fa-check-circle valid-feature"></i> Enhanced printing services validation</li>
-            <li><i class="fas fa-check-circle valid-feature"></i> Improved dark mode experience</li>
+            <li><i class="fas fa-check-circle valid-feature"></i> Improved theme experience</li>
             <li><i class="fas fa-check-circle valid-feature"></i> Better error handling and messages</li>
             <li><i class="fas fa-check-circle valid-feature"></i> Detailed validation summary cards</li>
             <li><i class="fas fa-check-circle valid-feature"></i> Enhanced print reports</li>
@@ -110,21 +110,22 @@
               <path d="M20 16.5a3.5 3.5 0 0 0-3.5-3.5h-.3A6.5 6.5 0 1 0 5 14.6" stroke="url(#g2)" stroke-width="1.6" stroke-linecap="round"/>
               <defs>
                 <linearGradient id="g1" x1="0" y1="0" x2="24" y2="24">
-                  <stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
+                  <stop stop-color="#286FB4"/><stop offset="1" stop-color="#286FB4"/>
                 </linearGradient>
                 <linearGradient id="g2" x1="0" y1="0" x2="24" y2="24">
-                  <stop stop-color="#22c55e"/><stop offset="1" stop-color="#06b6d4"/>
+                  <stop stop-color="#286FB4"/><stop offset="1" stop-color="#DF4C73"/>
                 </linearGradient>
               </defs>
             </svg>
           </div>
           <h3 id="uploadTitle">Drag & drop or click to upload</h3>
-          <p class="hint">JPG/PNG supported. Press <kbd>Ctrl</kbd>+<kbd>V</kbd> to paste or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to validate.</p>
+          <p class="hint">JPG/PNG/PDF supported. Press <kbd>Ctrl</kbd>+<kbd>V</kbd> to paste or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to validate.</p>
           <div class="supported-formats">
             <span class="format-badge">JPG</span>
             <span class="format-badge">PNG</span>
+            <span class="format-badge">PDF</span>
           </div>
-          <input id="fileInput" type="file" accept="image/*"/>
+          <input id="fileInput" type="file" accept="image/*,application/pdf"/>
         </div>
 
         <div class="preview" id="preview" hidden>
@@ -147,9 +148,12 @@
               <button class="btn btn-small ghost" id="clearBtn" type="button">
                 <i class="fas fa-trash"></i> Remove
               </button>
+              <button class="btn btn-small ghost" id="resetBtn" type="button">
+                <i class="fas fa-redo"></i> Reset All
+              </button>
             </div>
             <div class="preview-hint">
-              <i class="fas fa-info-circle"></i> Click "View Full" to preview the entire image
+              <i class="fas fa-info-circle"></i> Click "View Full" to preview the entire file
             </div>
           </div>
         </div>
@@ -322,7 +326,12 @@
         </div>
 
         <div class="history-panel" id="historyPanel" hidden>
-          <div class="small" style="margin-bottom:8px; font-weight:600">Recent Validations</div>
+          <div class="history-header">
+            <div class="small" style="margin-bottom:8px; font-weight:600">Recent Validations</div>
+            <button class="btn btn-small ghost" id="clearHistoryBtn" title="Clear History">
+              <i class="fas fa-trash"></i> Clear
+            </button>
+          </div>
           <div id="historyList"></div>
         </div>
 
@@ -333,7 +342,7 @@
           </div>
           <div class="tooltip">
             <i class="fas fa-question-circle"></i>
-            <span class="tooltiptext">Upload a clear image of your stationery bill for AI validation</span>
+            <span class="tooltiptext">Upload a clear image or PDF of your stationary bill for AI validation</span>
           </div>
         </footer>
       </section>

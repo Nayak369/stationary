@@ -1,6 +1,6 @@
 # AI Stationery Bill Validator
 
-An intelligent web application that validates stationery bills using Google's Gemini AI. This tool helps organizations verify stationery purchases by analyzing bill images, checking item eligibility, and validating calculations.
+An intelligent web application that validates stationary bills using Google's Gemini AI. This tool helps organizations verify stationary purchases by analyzing bill images, checking item eligibility, and validating calculations.
 
 ## 🌟 Key Features
 
@@ -10,7 +10,7 @@ An intelligent web application that validates stationery bills using Google's Ge
 - **📋 Comprehensive Data Extraction**: Extracts bill details including numbers, dates, and shop info
 - **📤 Multiple Export Options**: Export results as JSON, CSV, or printable reports
 - **📝 User Remarks**: Add custom remarks for context and documentation
-- **🌙 Dark Mode**: Supports both light and dark themes for comfortable viewing
+- **🎨 New Modern Theme**: Fresh blue and pink color scheme for a professional look
 - **⌨️ Keyboard Shortcuts**: Efficient navigation with keyboard controls
 - **📱 Responsive Design**: Works on desktop and mobile devices
 - **🎉 Animated UI**: Smooth animations and transitions for better user experience
@@ -27,7 +27,7 @@ graph TD
     F --> G[Review & Export]
 ```
 
-1. **Upload**: Drag and drop or click to upload a clear image of a stationery bill
+1. **Upload**: Drag and drop or click to upload a clear image of a stationary bill
 2. **Remark**: Add custom remarks about the validation for documentation
 3. **Validate**: AI analyzes the bill and checks item eligibility and calculations
 4. **Review**: View detailed analysis including item validation, calculation checks, and recommendations
@@ -35,7 +35,7 @@ graph TD
 
 ## 📋 Supported Items
 
-The validator recognizes common stationery and printing items including:
+The validator recognizes common stationary and printing items including:
 
 <details>
 <summary>Click to expand list</summary>
@@ -86,6 +86,11 @@ The validator recognizes common stationery and printing items including:
 - **Button Animations**: Gradient shine effects on primary buttons
 - **Card Hover**: Subtle lift effect when hovering over cards
 - **Form Interactions**: Smooth focus states for input fields
+
+### New Theme
+- **Color Scheme**: Fresh blue and pink theme with `#E2F0F9`, `#B0DDE4`, `#286FB4`, `#FFFFFF`, and `#DF4C73`
+- **Modern Design**: Clean, professional look with consistent color application
+- **Enhanced Visual Hierarchy**: Improved contrast and readability
 
 ## 📥 Installation
 
